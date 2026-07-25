@@ -1,0 +1,91 @@
+import Foundation
+import SwiftUI
+
+/// App-wide state: the list of configured servers, the currently connected
+/// server + its authenticated service, and the connection lifecycle.
+///
+/// Views observe this object and drive it through `connect`, `disconnect`,
+/// `addServer`, and `removeServer`. Network reads live on the per-screen view
+/// models; this object owns identity, persistence, and the shared service
+/// handle.
+@MainActor
+final class AppState: ObservableObject {
+    @Published var servers: [ProxmoxServer]
+    @Published private(set) var connectedServer: ProxmoxServer?
+    @Published private(set) var service: ProxmoxAPIService?
+    @Published private(set) var connectionState: ConnectionState = .disconnected
+    @Published var lastError: String?
+
+    enum ConnectionState: Equatable {
+        case disconnected
+        case connecting
+        case connected
+    }
+
+    var isConnected: Bool { connectionState == .connected }
+
+    init() {
+        self.servers = ServerStore.load()
+    }
+
+    // MARK: - Server management
+
+    func addServer(_ server: ProxmoxServer, password: String) {
+        servers.append(server)
+        KeychainHelper.savePassword(password, for: server.id)
+        ServerStore.save(servers)
+    }
+
+    func updateServer(_ server: ProxmoxServer, password: String?) {
+        guard let index = servers.firstIndex(where: { $0.id == server.id }) else { return }
+        servers[index] = server
+        if let password = password {
+            KeychainHelper.savePassword(password, for: server.id)
+        }
+        ServerStore.save(servers)
+    }
+
+    func removeServer(_ server: ProxmoxServer) {
+        servers.removeAll { $0.id == server.id }
+        KeychainHelper.deletePassword(for: server.id)
+        ServerStore.save(servers)
+        if connectedServer?.id == server.id {
+            disconnect()
+        }
+    }
+
+    // MARK: - Connection lifecycle
+
+    /// Connects to a server using its stored Keychain password.
+    func connect(to server: ProxmoxServer) async {
+        guard let password = KeychainHelper.password(for: server.id) else {
+            lastError = "No saved password for \(server.name). Edit the server to re-enter it."
+            return
+        }
+        await connect(to: server, password: password)
+    }
+
+    /// Connects with an explicit password (used right after adding a server).
+    func connect(to server: ProxmoxServer, password: String) async {
+        connectionState = .connecting
+        lastError = nil
+
+        let service = ProxmoxAPIService(server: server)
+        do {
+            try await service.authenticate(password: password)
+            self.service = service
+            self.connectedServer = server
+            self.connectionState = .connected
+        } catch {
+            self.connectionState = .disconnected
+            self.lastError = error.localizedDescription
+        }
+    }
+
+    func disconnect() {
+        Task { await service?.logout() }
+        service = nil
+        connectedServer = nil
+        connectionState = .disconnected
+    }
+}

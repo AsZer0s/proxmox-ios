@@ -1,0 +1,73 @@
+name: Build Unsigned IPA
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_15.4.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (archive, code signing disabled)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ProxmoxManager.xcodeproj \
+            -scheme ProxmoxManager \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/ProxmoxManager.xcarchive" \
+            -destination 'generic/platform=iOS' \
+            clean archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            | xcpretty || true
+          # Fail the job if the archive was not produced.
+          test -d "$RUNNER_TEMP/ProxmoxManager.xcarchive"
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/ProxmoxManager.xcarchive"
+          APP_PATH="$ARCHIVE/Products/Applications/ProxmoxManager.app"
+          test -d "$APP_PATH"
+
+          WORK="$RUNNER_TEMP/ipa"
+          rm -rf "$WORK"
+          mkdir -p "$WORK/Payload"
+          cp -R "$APP_PATH" "$WORK/Payload/"
+
+          # An IPA is just a zip of a Payload/ directory. Because the archive
+          # was built with signing disabled, the .app inside is unsigned.
+          ( cd "$WORK" && zip -qry ProxmoxManager-unsigned.ipa Payload )
+
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          mv "$WORK/ProxmoxManager-unsigned.ipa" "$GITHUB_WORKSPACE/artifacts/"
+          ls -lh "$GITHUB_WORKSPACE/artifacts"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProxmoxManager-unsigned-ipa
+          path: artifacts/ProxmoxManager-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
