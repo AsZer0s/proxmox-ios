@@ -10,14 +10,24 @@ on:
 jobs:
   build:
     name: Build unsigned IPA
-    runs-on: macos-14
+    runs-on: macos-26
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode_15.4.app
+      - name: Select latest Xcode 26
+        run: |
+          set -euo pipefail
+          XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$XCODE" ]; then
+            echo "No Xcode 26 found; using default:"
+            xcodebuild -version
+          else
+            echo "Selecting $XCODE"
+            sudo xcode-select -switch "$XCODE"
+          fi
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
