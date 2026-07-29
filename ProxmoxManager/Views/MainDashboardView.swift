@@ -19,6 +19,7 @@ struct MainDashboardView: View {
 
             TaskCenterView()
                 .environmentObject(appState.taskCenter)
+                .environmentObject(appState)
                 .tabItem {
                     Label("Tasks", systemImage: "checkmark.circle")
                 }

@@ -309,6 +309,13 @@ actor ProxmoxAPIService {
             .sorted { $0.n < $1.n }
     }
 
+    /// Cancels a running task (cluster tasks only, not guest-level tasks).
+    @discardableResult
+    func cancelTask(node: String, upid: String) async throws -> String {
+        let encodedUPID = upid.pathEscaped
+        return try await delete("/nodes/\(node)/tasks/\(encodedUPID)")
+    }
+
     func waitForTask(
         node: String,
         upid: String,

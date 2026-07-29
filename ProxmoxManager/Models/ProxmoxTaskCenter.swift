@@ -89,6 +89,23 @@ final class ProxmoxTaskCenter: ObservableObject {
         tasks.removeAll { $0.state != .running }
     }
 
+    /// Cancel a running task via the PVE API and mark it as failed.
+    func cancel(
+        upid: String,
+        node: String,
+        service: ProxmoxAPIService
+    ) async {
+        guard let index = tasks.firstIndex(where: { $0.upid == upid && $0.state == .running }) else { return }
+        do {
+            try await service.cancelTask(node: node, upid: upid)
+            tasks[index].finishedAt = Date()
+            tasks[index].state = .failed
+            tasks[index].message = "Cancelled by user."
+        } catch {
+            tasks[index].message = "Cancel failed: \(error.localizedDescription)"
+        }
+    }
+
     private func finish(
         id: UUID,
         state: ManagedProxmoxTask.State,
@@ -104,6 +121,7 @@ final class ProxmoxTaskCenter: ObservableObject {
 }
 
 struct TaskCenterView: View {
+    @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var taskCenter: ProxmoxTaskCenter
 
     var body: some View {
@@ -116,8 +134,28 @@ struct TaskCenterView: View {
                         description: "Completed and running Proxmox tasks will appear here."
                     )
                 } else {
-                    List(taskCenter.tasks) { task in
-                        TaskRow(task: task)
+                    List {
+                        ForEach(taskCenter.tasks) { task in
+                            Section {
+                                TaskRow(task: task)
+                                if task.state == .running, let service = appState.service {
+                                    Button(role: .destructive) {
+                                        Task {
+                                            await taskCenter.cancel(
+                                                upid: task.upid,
+                                                node: task.node,
+                                                service: service
+                                            )
+                                        }
+                                    } label: {
+                                        Label("Cancel Task", systemImage: "xmark.circle")
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.red)
+                                }
+                            }
+                        }
                     }
                     .listStyle(.insetGrouped)
                 }

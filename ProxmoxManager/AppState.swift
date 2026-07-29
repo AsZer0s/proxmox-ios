@@ -32,7 +32,7 @@ final class AppState: ObservableObject {
     @Published var pendingTFAChallenge: TFAChallengeState?
     @Published var permissions: ProxmoxPermissions?
     @Published var appLocked = true
-    let taskCenter = ProxmoxTaskCenter()
+    @Published var taskCenter = ProxmoxTaskCenter()
     private var authenticationObserver: NSObjectProtocol?
     /// Cancels an in-flight connection when a new one is started.
     private var connectionTask: Task<Void, Never>?
