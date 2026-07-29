@@ -17,6 +17,12 @@ struct MainDashboardView: View {
                     Label("VMs & CTs", systemImage: "square.stack.3d.up")
                 }
 
+            TaskCenterView()
+                .environmentObject(appState.taskCenter)
+                .tabItem {
+                    Label("Tasks", systemImage: "checkmark.circle")
+                }
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")

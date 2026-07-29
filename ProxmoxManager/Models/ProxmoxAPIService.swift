@@ -1,4 +1,6 @@
+import CryptoKit
 import Foundation
+import Security
 
 // MARK: - Errors
 
@@ -8,6 +10,8 @@ enum ProxmoxError: LocalizedError {
     case authenticationFailed(String)
     case requestFailed(status: Int, body: String)
     case decodingFailed(String)
+    case certificateConfirmationRequired(host: String, fingerprint: String)
+    case certificateMismatch(host: String, expected: String, actual: String)
     case taskFailed(String)
     case taskTimeout
     case network(String)
@@ -20,10 +24,14 @@ enum ProxmoxError: LocalizedError {
             return "Not logged in. Please connect to the server first."
         case .authenticationFailed(let msg):
             return "Authentication failed: \(msg)"
-        case .requestFailed(let status, let body):
-            return "Request failed (HTTP \(status)): \(body)"
+        case .requestFailed(let status, _):
+            return "Request failed (HTTP \(status))."
         case .decodingFailed(let msg):
             return "Could not read the server response: \(msg)"
+        case .certificateConfirmationRequired(let host, let fingerprint):
+            return "Confirm the SHA-256 certificate fingerprint for \(host):\n\(fingerprint)"
+        case .certificateMismatch(let host, let expected, let actual):
+            return "Certificate mismatch for \(host). Expected \(expected), received \(actual)."
         case .taskFailed(let msg):
             return "Proxmox task failed: \(msg)"
         case .taskTimeout:
@@ -44,6 +52,7 @@ enum ProxmoxError: LocalizedError {
 actor ProxmoxAPIService {
     private let server: ProxmoxServer
     private let session: URLSession
+    private let certificateTrustState: CertificateTrustState
 
     private var ticket: String?
     private var csrfToken: String?
@@ -56,10 +65,18 @@ actor ProxmoxAPIService {
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
 
+        let trustState = CertificateTrustState(
+            host: server.host,
+            expectedFingerprint: server.allowInsecureSSL
+                ? KeychainHelper.certificateFingerprint(for: server.id)
+                : nil
+        )
+        self.certificateTrustState = trustState
+
         if server.allowInsecureSSL {
             self.session = URLSession(
                 configuration: config,
-                delegate: InsecureSSLDelegate(host: server.host),
+                delegate: InsecureSSLDelegate(trustState: trustState),
                 delegateQueue: nil
             )
         } else {
@@ -89,9 +106,8 @@ actor ProxmoxAPIService {
         }
 
         guard http.statusCode == 200 else {
-            let bodyText = String(data: data, encoding: .utf8) ?? ""
             throw ProxmoxError.authenticationFailed(
-                http.statusCode == 401 ? "Invalid credentials" : bodyText
+                http.statusCode == 401 ? "Invalid credentials" : "The server rejected the authentication request (HTTP \(http.statusCode))."
             )
         }
 
@@ -205,8 +221,14 @@ actor ProxmoxAPIService {
     }
 
     func fetchTaskStatus(node: String, upid: String) async throws -> ProxmoxTaskStatus {
-        let encodedUPID = upid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? upid
+        let encodedUPID = upid.pathEscaped
         return try await get("/nodes/\(node)/tasks/\(encodedUPID)/status", as: ProxmoxTaskStatus.self)
+    }
+
+    func fetchTaskLog(node: String, upid: String) async throws -> [ProxmoxTaskLogEntry] {
+        let encodedUPID = upid.pathEscaped
+        return try await get("/nodes/\(node)/tasks/\(encodedUPID)/log", as: [ProxmoxTaskLogEntry].self)
+            .sorted { $0.n < $1.n }
     }
 
     func waitForTask(
@@ -322,9 +344,16 @@ actor ProxmoxAPIService {
             throw ProxmoxError.network("No HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 401 { throw ProxmoxError.notAuthenticated }
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw ProxmoxError.requestFailed(status: http.statusCode, body: body)
+            if http.statusCode == 401 {
+                ticket = nil
+                csrfToken = nil
+                NotificationCenter.default.post(
+                    name: .proxmoxAuthenticationExpired,
+                    object: server.id
+                )
+                throw ProxmoxError.notAuthenticated
+            }
+            throw ProxmoxError.requestFailed(status: http.statusCode, body: "")
         }
     }
 
@@ -332,21 +361,64 @@ actor ProxmoxAPIService {
         do {
             return try await session.data(for: request)
         } catch {
+            if let event = certificateTrustState.takeEvent() {
+                switch event {
+                case .confirmationRequired(let fingerprint):
+                    throw ProxmoxError.certificateConfirmationRequired(
+                        host: server.host,
+                        fingerprint: fingerprint
+                    )
+                case .mismatch(let expected, let actual):
+                    throw ProxmoxError.certificateMismatch(
+                        host: server.host,
+                        expected: expected,
+                        actual: actual
+                    )
+                }
+            }
             throw ProxmoxError.network(error.localizedDescription)
         }
     }
 }
 
-// MARK: - Insecure SSL
+// MARK: - Certificate Trust
 
-/// Accepts self-signed certificates for the configured host only. Proxmox
-/// ships a self-signed cert by default, so home setups need this. Scoped to
-/// the exact host to avoid trusting arbitrary servers.
-private final class InsecureSSLDelegate: NSObject, URLSessionDelegate {
-    private let host: String
+private final class CertificateTrustState: @unchecked Sendable {
+    enum Event {
+        case confirmationRequired(String)
+        case mismatch(expected: String, actual: String)
+    }
 
-    init(host: String) {
+    let host: String
+    let expectedFingerprint: String?
+    private let lock = NSLock()
+    private var event: Event?
+
+    init(host: String, expectedFingerprint: String?) {
         self.host = host
+        self.expectedFingerprint = expectedFingerprint
+    }
+
+    func record(_ event: Event) {
+        lock.lock()
+        self.event = event
+        lock.unlock()
+    }
+
+    func takeEvent() -> Event? {
+        lock.lock()
+        defer { lock.unlock() }
+        let event = self.event
+        self.event = nil
+        return event
+    }
+}
+
+private final class InsecureSSLDelegate: NSObject, URLSessionDelegate {
+    private let trustState: CertificateTrustState
+
+    init(trustState: CertificateTrustState) {
+        self.trustState = trustState
     }
 
     func urlSession(
@@ -355,11 +427,37 @@ private final class InsecureSSLDelegate: NSObject, URLSessionDelegate {
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              challenge.protectionSpace.host == host,
-              let trust = challenge.protectionSpace.serverTrust else {
+              hostMatches(challenge.protectionSpace.host),
+              let trust = challenge.protectionSpace.serverTrust,
+              let certificate = SecTrustGetCertificateAtIndex(trust, 0) else {
             completionHandler(.performDefaultHandling, nil)
             return
         }
+
+        let actual = Self.fingerprint(for: certificate)
+        guard let expected = trustState.expectedFingerprint else {
+            trustState.record(.confirmationRequired(actual))
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        guard expected.caseInsensitiveCompare(actual) == .orderedSame else {
+            trustState.record(.mismatch(expected: expected, actual: actual))
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
         completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+
+    private func hostMatches(_ challengeHost: String) -> Bool {
+        let configuredHost = trustState.host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        return challengeHost.caseInsensitiveCompare(configuredHost) == .orderedSame
+    }
+
+    private static func fingerprint(for certificate: SecCertificate) -> String {
+        let data = SecCertificateCopyData(certificate) as Data
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02X", $0) }.joined(separator: ":")
     }
 }

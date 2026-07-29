@@ -43,8 +43,20 @@ struct VMListView: View {
                 }
             }
             .navigationTitle("VMs & CTs")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if let lastUpdated = model.lastUpdated {
+                        Text(lastUpdated, style: .time)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             .refreshable { await model.load(service: appState.service) }
-            .task { await model.load(service: appState.service) }
+            .task {
+                await model.load(service: appState.service)
+                await model.refreshLoop(service: appState.service)
+            }
         }
     }
 }
@@ -78,6 +90,7 @@ final class VMListViewModel: ObservableObject {
     @Published private(set) var guests: [ProxmoxVM] = []
     @Published var isLoading = false
     @Published var error: String?
+    @Published private(set) var lastUpdated: Date?
 
     func guests(ofType type: GuestType) -> [ProxmoxVM] {
         guests.filter { $0.type == type }
@@ -109,10 +122,19 @@ final class VMListViewModel: ObservableObject {
                 return vm
             }
             .sorted { $0.vmid < $1.vmid }
+            lastUpdated = Date()
         } catch {
             self.error = error.localizedDescription
         }
         isLoading = false
+    }
+
+    func refreshLoop(service: ProxmoxAPIService?) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard !Task.isCancelled else { return }
+            await load(service: service)
+        }
     }
 }
 

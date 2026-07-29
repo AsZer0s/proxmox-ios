@@ -35,6 +35,17 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Run unit tests
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ProxmoxManager.xcodeproj \
+            -scheme ProxmoxManager \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            test
+
       - name: Build (archive, code signing disabled)
         run: |
           set -euo pipefail
@@ -49,8 +60,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            DEVELOPMENT_TEAM="" \
-            | xcpretty || true
+            DEVELOPMENT_TEAM=""
           # Fail the job if the archive was not produced.
           test -d "$RUNNER_TEMP/ProxmoxManager.xcarchive"
 

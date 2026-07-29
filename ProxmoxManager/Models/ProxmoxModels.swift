@@ -4,16 +4,68 @@ import Foundation
 
 /// A single Proxmox VE server the user has configured.
 struct ProxmoxServer: Identifiable, Codable, Hashable {
-    var id: UUID = UUID()
+    var id: UUID
     var name: String
     var host: String
-    var port: Int = 8006
+    var port: Int
     var username: String
-    var realm: String = "pam"
-    var allowInsecureSSL: Bool = true
+    var realm: String
+    var allowInsecureSSL: Bool
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        host: String,
+        port: Int = 8006,
+        username: String,
+        realm: String = "pam",
+        allowInsecureSSL: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.host = host
+        self.port = port
+        self.username = username
+        self.realm = realm
+        self.allowInsecureSSL = allowInsecureSSL
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, host, port, username, realm, allowInsecureSSL
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+        host = try container.decode(String.self, forKey: .host)
+        port = try container.decodeIfPresent(Int.self, forKey: .port) ?? 8006
+        username = try container.decode(String.self, forKey: .username)
+        realm = try container.decodeIfPresent(String.self, forKey: .realm) ?? "pam"
+        allowInsecureSSL = try container.decodeIfPresent(Bool.self, forKey: .allowInsecureSSL) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(host, forKey: .host)
+        try container.encode(port, forKey: .port)
+        try container.encode(username, forKey: .username)
+        try container.encode(realm, forKey: .realm)
+        try container.encode(allowInsecureSSL, forKey: .allowInsecureSSL)
+    }
 
     var baseURL: String {
-        "https://\(host):\(port)/api2/json"
+        var components = URLComponents()
+        components.scheme = "https"
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        components.host = trimmedHost.contains(":") && !trimmedHost.hasPrefix("[")
+            ? "[\(trimmedHost)]"
+            : trimmedHost
+        components.port = port
+        components.path = "/api2/json"
+        return components.url?.absoluteString ?? "https://\(host):\(port)/api2/json"
     }
 
     var fullUsername: String {
@@ -127,6 +179,13 @@ struct NodeStatus: Codable, Hashable {
         let used: Int64?
         let free: Int64?
     }
+}
+
+struct ProxmoxTaskLogEntry: Codable, Hashable, Identifiable {
+    let n: Int
+    let t: String
+
+    var id: Int { n }
 }
 
 struct ProxmoxTaskStatus: Codable, Hashable {

@@ -1,6 +1,10 @@
 import Foundation
 import SwiftUI
 
+extension Notification.Name {
+    static let proxmoxAuthenticationExpired = Notification.Name("proxmox.authenticationExpired")
+}
+
 // MARK: - String
 
 extension String {
@@ -19,7 +23,9 @@ extension String {
     }
 
     var pathEscaped: String {
-        addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? self
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return addingPercentEncoding(withAllowedCharacters: allowed) ?? self
     }
 }
 

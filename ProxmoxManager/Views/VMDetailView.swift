@@ -23,8 +23,20 @@ struct VMDetailView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(guest.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let lastUpdated = model.lastUpdated {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Text(lastUpdated, style: .time)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
         .refreshable { await model.refresh(service: appState.service, guest: guest) }
-        .task { await model.refresh(service: appState.service, guest: guest) }
+        .task {
+            await model.refresh(service: appState.service, guest: guest)
+            await model.refreshLoop(service: appState.service, guest: guest)
+        }
         .confirmationDialog(
             pendingAction.map { "\($0.label) \(guest.displayName)?" } ?? "",
             isPresented: Binding(
@@ -36,7 +48,12 @@ struct VMDetailView: View {
             if let action = pendingAction {
                 Button(action.label, role: action.isDestructive ? .destructive : nil) {
                     Task {
-                        await model.perform(action, service: appState.service, guest: guest)
+                        await model.perform(
+                            action,
+                            service: appState.service,
+                            taskCenter: appState.taskCenter,
+                            guest: guest
+                        )
                         pendingAction = nil
                     }
                 }
@@ -60,6 +77,7 @@ struct VMDetailView: View {
                             await model.rollbackSnapshot(
                                 snapshot,
                                 service: appState.service,
+                                taskCenter: appState.taskCenter,
                                 guest: guest
                             )
                         }
@@ -71,6 +89,7 @@ struct VMDetailView: View {
                             await model.deleteSnapshot(
                                 snapshot,
                                 service: appState.service,
+                                taskCenter: appState.taskCenter,
                                 guest: guest
                             )
                         }
@@ -86,6 +105,7 @@ struct VMDetailView: View {
                         name: name,
                         description: description,
                         service: appState.service,
+                        taskCenter: appState.taskCenter,
                         guest: guest
                     )
                 }
@@ -396,6 +416,7 @@ final class VMDetailViewModel: ObservableObject {
     @Published var isLoadingSnapshots = false
     @Published var isPerformingAction = false
     @Published var taskMessage = ""
+    @Published private(set) var lastUpdated: Date?
     @Published var error: String?
 
     func refresh(service: ProxmoxAPIService?, guest: ProxmoxVM) async {
@@ -417,6 +438,15 @@ final class VMDetailViewModel: ObservableObject {
         }
 
         await loadSnapshots(service: service, guest: guest)
+        lastUpdated = Date()
+    }
+
+    func refreshLoop(service: ProxmoxAPIService?, guest: ProxmoxVM) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard !Task.isCancelled else { return }
+            await refresh(service: service, guest: guest)
+        }
     }
 
     private func loadSnapshots(service: ProxmoxAPIService, guest: ProxmoxVM) async {
@@ -435,6 +465,7 @@ final class VMDetailViewModel: ObservableObject {
         name: String,
         description: String,
         service: ProxmoxAPIService?,
+        taskCenter: ProxmoxTaskCenter,
         guest: ProxmoxVM
     ) async {
         guard let service, !name.isEmpty else { return }
@@ -450,6 +481,13 @@ final class VMDetailViewModel: ObservableObject {
                 description: description
             )
             if !upid.isEmpty {
+                taskCenter.track(
+                    upid: upid,
+                    node: guest.node,
+                    title: "Create snapshot",
+                    object: guest.displayName,
+                    service: service
+                )
                 _ = try await service.waitForTask(node: guest.node, upid: upid)
             }
             await loadSnapshots(service: service, guest: guest)
@@ -463,6 +501,7 @@ final class VMDetailViewModel: ObservableObject {
     func rollbackSnapshot(
         _ snapshot: GuestSnapshot,
         service: ProxmoxAPIService?,
+        taskCenter: ProxmoxTaskCenter,
         guest: ProxmoxVM
     ) async {
         guard let service else { return }
@@ -477,6 +516,13 @@ final class VMDetailViewModel: ObservableObject {
                 snapshot: snapshot.name
             )
             if !upid.isEmpty {
+                taskCenter.track(
+                    upid: upid,
+                    node: guest.node,
+                    title: "Rollback snapshot",
+                    object: "\(guest.displayName) · \(snapshot.name)",
+                    service: service
+                )
                 _ = try await service.waitForTask(node: guest.node, upid: upid)
             }
             await refresh(service: service, guest: guest)
@@ -490,6 +536,7 @@ final class VMDetailViewModel: ObservableObject {
     func deleteSnapshot(
         _ snapshot: GuestSnapshot,
         service: ProxmoxAPIService?,
+        taskCenter: ProxmoxTaskCenter,
         guest: ProxmoxVM
     ) async {
         guard let service else { return }
@@ -504,6 +551,13 @@ final class VMDetailViewModel: ObservableObject {
                 snapshot: snapshot.name
             )
             if !upid.isEmpty {
+                taskCenter.track(
+                    upid: upid,
+                    node: guest.node,
+                    title: "Delete snapshot",
+                    object: "\(guest.displayName) · \(snapshot.name)",
+                    service: service
+                )
                 _ = try await service.waitForTask(node: guest.node, upid: upid)
             }
             snapshots.removeAll { $0.id == snapshot.id }
@@ -514,7 +568,12 @@ final class VMDetailViewModel: ObservableObject {
         }
     }
 
-    func perform(_ action: GuestAction, service: ProxmoxAPIService?, guest: ProxmoxVM) async {
+    func perform(
+        _ action: GuestAction,
+        service: ProxmoxAPIService?,
+        taskCenter: ProxmoxTaskCenter,
+        guest: ProxmoxVM
+    ) async {
         guard let service = service else { return }
         isPerformingAction = true
         taskMessage = "Submitting action…"
@@ -523,6 +582,13 @@ final class VMDetailViewModel: ObservableObject {
             let upid = try await service.performAction(action, node: guest.node, type: guest.type, vmid: guest.vmid)
             if !upid.isEmpty {
                 taskMessage = "Waiting for Proxmox task…"
+                taskCenter.track(
+                    upid: upid,
+                    node: guest.node,
+                    title: action.label,
+                    object: guest.displayName,
+                    service: service
+                )
                 _ = try await service.waitForTask(node: guest.node, upid: upid)
             }
             await refresh(service: service, guest: guest)

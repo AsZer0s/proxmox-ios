@@ -14,6 +14,8 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Proxmox Manager connects directly to Proxmox servers on your local network.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 </dict>

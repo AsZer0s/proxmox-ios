@@ -19,7 +19,7 @@ struct ServerSetupView: View {
     @State private var username: String = "root"
     @State private var realm: String = "pam"
     @State private var password: String = ""
-    @State private var allowInsecureSSL: Bool = true
+    @State private var allowInsecureSSL: Bool = false
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -30,7 +30,7 @@ struct ServerSetupView: View {
         !name.trimmed.isEmpty &&
         !host.trimmed.isEmpty &&
         !username.trimmed.isEmpty &&
-        Int(port) != nil &&
+        (1...65535).contains(Int(port) ?? 0) &&
         (isEditing || !password.isEmpty)
     }
 

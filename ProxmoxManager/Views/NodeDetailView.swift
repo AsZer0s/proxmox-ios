@@ -33,8 +33,18 @@ struct NodeDetailView: View {
         .navigationTitle(node.node)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await model.load(service: appState.service, node: node) }
-        .task(id: node.node) { await model.load(service: appState.service, node: node) }
+        .task(id: node.node) {
+            await model.load(service: appState.service, node: node)
+            await model.refreshLoop(service: appState.service, node: node)
+        }
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                if let lastUpdated = model.lastUpdated {
+                    Text(lastUpdated, style: .time)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if model.isLoading {
                     ProgressView()
@@ -141,6 +151,7 @@ final class NodeDetailViewModel: ObservableObject {
     @Published private(set) var guests: [ProxmoxVM] = []
     @Published var isLoading = false
     @Published var error: String?
+    @Published private(set) var lastUpdated: Date?
 
     func load(service: ProxmoxAPIService?, node: ProxmoxNode) async {
         guard let service else { return }
@@ -161,7 +172,16 @@ final class NodeDetailViewModel: ObservableObject {
             }
         }
 
+        lastUpdated = Date()
         isLoading = false
+    }
+
+    func refreshLoop(service: ProxmoxAPIService?, node: ProxmoxNode) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard !Task.isCancelled else { return }
+            await load(service: service, node: node)
+        }
     }
 }
 

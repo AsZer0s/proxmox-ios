@@ -6,12 +6,15 @@ A native SwiftUI application for managing Proxmox Virtual Environment (PVE) serv
 - 🖥️ Manage multiple Proxmox servers (credentials stored in the iOS Keychain)
 - 🚀 Start, stop, shutdown, and reboot VMs and LXC containers
 - 📊 Real-time node and guest resource monitoring (CPU / memory / disk / uptime)
-- 🔐 Self-signed certificate support for typical home setups
+- 🔐 Self-signed certificate support with first-use SHA-256 fingerprint pinning
 - 📱 Native iOS design for iPhone and iPad
+- 🧪 Unit tests for model decoding and request encoding
+- 📋 Global task center for tracking long-running Proxmox operations
+- 🔄 Foreground auto-refresh with last-updated timestamps
 
 ## Requirements
 - iOS 16.0+
-- Xcode 15.0+
+- Xcode 26.0+ (required for current App Store submissions)
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (the Xcode project is generated from `project.yml`)
 - Proxmox VE 6.0+
 
@@ -45,10 +48,11 @@ The unsigned IPA is suitable for sideloading tools that re-sign the app
 a stock device without signing.
 
 ## Security
-- Passwords are stored in the iOS Keychain, never in plain `UserDefaults`.
-- Self-signed certificate trust is scoped to the exact configured host.
-- For production use, configure a proper CA-signed certificate on your Proxmox
-  server and turn off "Allow self-signed certificate".
+- Passwords and pinned certificate fingerprints are stored in the iOS Keychain.
+- Self-signed certificates require explicit first-use SHA-256 fingerprint confirmation and are scoped to the configured host.
+- Certificate changes are rejected after a fingerprint has been pinned.
+- App Transport Security remains enabled by default; use a CA-signed certificate for production deployments.
+- For production use, configure a proper CA-signed certificate on your Proxmox server and leave "Allow self-signed certificate" turned off.
 
 ## License
 MIT License - see LICENSE file for details.

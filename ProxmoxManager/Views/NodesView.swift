@@ -35,6 +35,13 @@ struct NodesView: View {
             }
             .navigationTitle("Nodes")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if let lastUpdated = model.lastUpdated {
+                        Text(lastUpdated, style: .time)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if model.isLoading && !model.nodes.isEmpty {
                         ProgressView()
@@ -42,7 +49,10 @@ struct NodesView: View {
                 }
             }
             .refreshable { await model.load(service: appState.service) }
-            .task { await model.load(service: appState.service) }
+            .task {
+                await model.load(service: appState.service)
+                await model.refreshLoop(service: appState.service)
+            }
         }
     }
 }
@@ -91,6 +101,7 @@ final class NodesViewModel: ObservableObject {
     @Published var nodes: [ProxmoxNode] = []
     @Published var isLoading = false
     @Published var error: String?
+    @Published private(set) var lastUpdated: Date?
 
     func load(service: ProxmoxAPIService?) async {
         guard let service = service else { return }
@@ -98,10 +109,19 @@ final class NodesViewModel: ObservableObject {
         error = nil
         do {
             nodes = try await service.fetchNodes()
+            lastUpdated = Date()
         } catch {
             self.error = error.localizedDescription
         }
         isLoading = false
+    }
+
+    func refreshLoop(service: ProxmoxAPIService?) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard !Task.isCancelled else { return }
+            await load(service: service)
+        }
     }
 }
 

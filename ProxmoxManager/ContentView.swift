@@ -79,6 +79,16 @@ struct ServerListView: View {
             } message: {
                 Text(appState.lastError ?? "")
             }
+            .alert(item: $appState.pendingCertificateConfirmation) { confirmation in
+                Alert(
+                    title: Text("Trust Self-Signed Certificate?"),
+                    message: Text("Only trust this certificate if you verified it on the server.\n\nSHA-256:\n\(confirmation.fingerprint)"),
+                    primaryButton: .default(Text("Trust")) {
+                        Task { await appState.trustPendingCertificate() }
+                    },
+                    secondaryButton: .cancel()
+                )
+            }
         }
     }
 
