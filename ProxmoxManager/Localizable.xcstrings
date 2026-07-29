@@ -3,466 +3,1119 @@
   "strings" : {
     "Proxmox Manager" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Proxmox Manager"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Proxmox Manager"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Proxmox Manager" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Proxmox Manager" } }
       }
     },
     "Servers" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Servers"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Servers" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务器" } }
       }
     },
     "No Servers" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No Servers"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有服务器"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Servers" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有服务器" } }
       }
     },
     "Tap + to add a Proxmox server." : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap + to add a Proxmox server."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击 + 添加 Proxmox 服务器"
-          }
-        }
-      }
-    },
-    "Connect" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connect"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连接"
-          }
-        }
-      }
-    },
-    "Disconnect" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disconnect"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "断开连接"
-          }
-        }
-      }
-    },
-    "Delete" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除"
-          }
-        }
-      }
-    },
-    "Cancel" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取消"
-          }
-        }
-      }
-    },
-    "Save" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存"
-          }
-        }
-      }
-    },
-    "Nodes" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nodes"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "节点"
-          }
-        }
-      }
-    },
-    "Tasks" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tasks"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "任务"
-          }
-        }
-      }
-    },
-    "Settings" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Settings"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "设置"
-          }
-        }
-      }
-    },
-    "VMs & CTs" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "VMs & CTs"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "虚拟机与容器"
-          }
-        }
-      }
-    },
-    "Virtual Machines" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Virtual Machines"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "虚拟机"
-          }
-        }
-      }
-    },
-    "Containers" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Containers"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "容器"
-          }
-        }
-      }
-    },
-    "Start" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动"
-          }
-        }
-      }
-    },
-    "Stop" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "强制停止"
-          }
-        }
-      }
-    },
-    "Shutdown" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shutdown"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关机"
-          }
-        }
-      }
-    },
-    "Reboot" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reboot"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重启"
-          }
-        }
-      }
-    },
-    "Snapshots" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Snapshots"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "快照"
-          }
-        }
-      }
-    },
-    "Storage" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Storage"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "存储"
-          }
-        }
-      }
-    },
-    "Backups" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Backups"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "备份"
-          }
-        }
-      }
-    },
-    "Charts" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Charts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "图表"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap + to add a Proxmox server." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "点击 + 添加 Proxmox 服务器" } }
       }
     },
     "Edit" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "编辑"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编辑" } }
       }
     },
-    "Add Server" : {
+    "Delete" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Server"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加服务器"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除" } }
       }
     },
-    "Edit Server" : {
+    "Cancel" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit Server"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "编辑服务器"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } }
+      }
+    },
+    "OK" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OK" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "确定" } }
+      }
+    },
+    "Submit" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Submit" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "提交" } }
+      }
+    },
+    "Save" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存" } }
+      }
+    },
+    "Done" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Done" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完成" } }
+      }
+    },
+    "Reset" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reset" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重置" } }
+      }
+    },
+    "Retry" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } }
+      }
+    },
+    "Clear" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除" } }
+      }
+    },
+    "Create" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Create" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "创建" } }
+      }
+    },
+    "Unlock" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unlock" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解锁" } }
+      }
+    },
+    "Trust" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Trust" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "信任" } }
+      }
+    },
+    "Rollback" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rollback" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回滚" } }
+      }
+    },
+    "Yes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Yes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "是" } }
+      }
+    },
+    "No" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "否" } }
+      }
+    },
+    "Enabled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enabled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已启用" } }
+      }
+    },
+    "All" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部" } }
+      }
+    },
+    "Running" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Running" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "运行中" } }
+      }
+    },
+    "Stopped" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stopped" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已停止" } }
+      }
+    },
+    "Succeeded" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Succeeded" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "成功" } }
+      }
+    },
+    "Failed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败" } }
+      }
+    },
+
+    "Nodes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Nodes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "节点" } }
+      }
+    },
+    "VMs & CTs" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "VMs & CTs" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "虚拟机与容器" } }
+      }
+    },
+    "Tasks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tasks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "任务" } }
+      }
+    },
+    "Settings" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设置" } }
+      }
+    },
+    "Filters" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Filters" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "筛选" } }
+      }
+    },
+    "Version" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Version" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "版本" } }
+      }
+    },
+    "Auth" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Auth" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "认证方式" } }
+      }
+    },
+
+    "Resources" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Resources" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "资源" } }
       }
     },
     "Configuration" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configuration"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "配置"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Configuration" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "配置" } }
       }
     },
     "Actions" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actions"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "操作"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Actions" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "操作" } }
       }
     },
-    "Resources" : {
+    "Snapshots" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Resources"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "资源"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Snapshots" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "快照" } }
+      }
+    },
+    "Overview" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "概览" } }
+      }
+    },
+    "Storage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Storage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "存储" } }
+      }
+    },
+    "Backups" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Backups" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "备份" } }
+      }
+    },
+    "Charts" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Charts" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "图表" } }
+      }
+    },
+    "Security" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Security" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "安全" } }
+      }
+    },
+
+    "Name" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Name" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "名称" } }
+      }
+    },
+    "Host or IP" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Host or IP" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "主机名或 IP" } }
+      }
+    },
+    "Port" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Port" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "端口" } }
+      }
+    },
+    "Username" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Username" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用户名" } }
+      }
+    },
+    "Realm" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Realm" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "域" } }
+      }
+    },
+    "Password" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Password" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "密码" } }
+      }
+    },
+    "New password (optional)" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New password (optional)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新密码（可选）" } }
+      }
+    },
+    "Token ID (e.g. root@pam!mytoken)" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Token ID (e.g. root@pam!mytoken)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Token ID（如 root@pam!mytoken）" } }
+      }
+    },
+    "Token Secret" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Token Secret" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Token 密钥" } }
+      }
+    },
+    "Method" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Method" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "方式" } }
+      }
+    },
+    "Server" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Server" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务器" } }
+      }
+    },
+    "Authentication" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authentication" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "认证" } }
+      }
+    },
+    "Description" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Description" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "描述" } }
+      }
+    },
+    "Description (optional)" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Description (optional)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "描述（可选）" } }
+      }
+    },
+    "Status" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "状态" } }
+      }
+    },
+    "Node" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Node" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "节点" } }
+      }
+    },
+    "Uptime" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Uptime" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "运行时间" } }
+      }
+    },
+    "Load average" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Load average" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "系统负载" } }
+      }
+    },
+    "CPU" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "CPU" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "CPU" } }
+      }
+    },
+    "Memory" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Memory" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "内存" } }
+      }
+    },
+    "Disk" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Disk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "磁盘" } }
+      }
+    },
+    "Root disk" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Root disk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "系统磁盘" } }
+      }
+    },
+    "Type" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "类型" } }
+      }
+    },
+    "Total" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Total" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "总计" } }
+      }
+    },
+    "Used" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Used" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已用" } }
+      }
+    },
+    "Available" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Available" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可用" } }
+      }
+    },
+    "Content Types" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Content Types" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "内容类型" } }
+      }
+    },
+    "Swap" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Swap" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "交换空间" } }
+      }
+    },
+    "Boot order" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Boot order" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "启动顺序" } }
+      }
+    },
+    "Start on boot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start on boot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开机启动" } }
+      }
+    },
+    "OS type" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OS type" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "操作系统" } }
+      }
+    },
+    "Guest agent" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Guest agent" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Guest Agent" } }
+      }
+    },
+    "Unprivileged" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unprivileged" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "非特权容器" } }
+      }
+    },
+    "Tags" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tags" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标签" } }
+      }
+    },
+    "CPU cores" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "CPU cores" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "CPU 核心数" } }
+      }
+    },
+    "CPU sockets" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "CPU sockets" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "CPU 插槽数" } }
+      }
+    },
+    "vCPUs" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "vCPUs" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "vCPU" } }
+      }
+    },
+    "ID" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "ID" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编号" } }
+      }
+    },
+    "Network I/O" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Network I/O" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网络 I/O" } }
+      }
+    },
+    "Disk I/O" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Disk I/O" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "磁盘 I/O" } }
+      }
+    },
+    "Network" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Network" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网络" } }
+      }
+    },
+    "Timeframe" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Timeframe" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "时间范围" } }
+      }
+    },
+    "Metric" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Metric" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "指标" } }
+      }
+    },
+    "Task Log" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Task Log" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "任务日志" } }
+      }
+    },
+    "Task log" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Task log" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "任务日志" } }
+      }
+    },
+
+    "Start" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "启动" } }
+      }
+    },
+    "Stop" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stop" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "强制停止" } }
+      }
+    },
+    "Shutdown" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Shutdown" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关机" } }
+      }
+    },
+    "Reboot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reboot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重启" } }
+      }
+    },
+    "Virtual Machines" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Virtual Machines" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "虚拟机" } }
+      }
+    },
+    "Containers" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Containers" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "容器" } }
+      }
+    },
+
+    "Virtual Machine" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Virtual Machine" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "虚拟机" } }
+      }
+    },
+    "Container" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Container" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "容器" } }
+      }
+    },
+    "Username + Password" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Username + Password" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用户名 + 密码" } }
+      }
+    },
+    "API Token" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "API Token" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "API Token" } }
+      }
+    },
+    "Disconnect" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Disconnect" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "断开连接" } }
+      }
+    },
+
+    "SCSI 0" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "SCSI 0" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "SCSI 0" } }
+      }
+    },
+    "VirtIO 0" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "VirtIO 0" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "VirtIO 0" } }
+      }
+    },
+    "SATA 0" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "SATA 0" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "SATA 0" } }
+      }
+    },
+    "IDE 0" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "IDE 0" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "IDE 0" } }
+      }
+    },
+    "Mount point 0" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Mount point 0" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "挂载点 0" } }
+      }
+    },
+    "Mount point 1" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Mount point 1" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "挂载点 1" } }
+      }
+    },
+    "Network 0" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Network 0" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网卡 0" } }
+      }
+    },
+    "Network 1" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Network 1" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网卡 1" } }
+      }
+    },
+
+    "Loading nodes…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading nodes…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载节点…" } }
+      }
+    },
+    "Loading node…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading node…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载节点…" } }
+      }
+    },
+    "Loading guests…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading guests…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载虚拟机…" } }
+      }
+    },
+    "Loading storage…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading storage…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载存储…" } }
+      }
+    },
+    "Loading backups…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading backups…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载备份…" } }
+      }
+    },
+    "Loading snapshots…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading snapshots…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载快照…" } }
+      }
+    },
+    "Loading data…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading data…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载数据…" } }
+      }
+    },
+    "Connecting…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connecting…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "连接中…" } }
+      }
+    },
+    "Authenticating and fetching server info…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authenticating and fetching server info…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在认证并获取服务器信息…" } }
+      }
+    },
+
+    "No Nodes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Nodes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有节点" } }
+      }
+    },
+    "This cluster reported no nodes." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This cluster reported no nodes." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该集群没有报告任何节点。" } }
+      }
+    },
+    "No Guests" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Guests" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有虚拟机" } }
+      }
+    },
+    "No VMs or containers were found." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No VMs or containers were found." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未找到任何虚拟机或容器。" } }
+      }
+    },
+    "No VMs or containers are assigned to this node." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No VMs or containers are assigned to this node." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此节点上没有分配任何虚拟机或容器。" } }
+      }
+    },
+    "No snapshots" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No snapshots" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有快照" } }
+      }
+    },
+    "No content" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No content" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有内容" } }
+      }
+    },
+    "No Storage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Storage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有存储" } }
+      }
+    },
+    "No storage configured on this node." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No storage configured on this node." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此节点未配置存储。" } }
+      }
+    },
+    "No Backups" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Backups" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有备份" } }
+      }
+    },
+    "No backup jobs configured on this node." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No backup jobs configured on this node." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此节点未配置备份任务。" } }
+      }
+    },
+    "No Tasks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Tasks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有任务" } }
+      }
+    },
+    "Completed and running Proxmox tasks will appear here." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed and running Proxmox tasks will appear here." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已完成和运行中的 Proxmox 任务将显示在这里。" } }
+      }
+    },
+    "No Data" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Data" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有数据" } }
+      }
+    },
+    "No RRD data available for this timeframe." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No RRD data available for this timeframe." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该时间范围内没有 RRD 数据。" } }
+      }
+    },
+
+    "Something went wrong" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Something went wrong" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "出了点问题" } }
+      }
+    },
+    "Error" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Error" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "错误" } }
+      }
+    },
+    "Connection Error" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connection Error" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "连接错误" } }
+      }
+    },
+
+    "Search by name, VMID, or node" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search by name, VMID, or node" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按名称、编号或节点搜索" } }
+      }
+    },
+    "Filter by Status" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Filter by Status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按状态筛选" } }
+      }
+    },
+    "Filter by Node" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Filter by Node" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按节点筛选" } }
+      }
+    },
+
+    "Authenticate to unlock" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authenticate to unlock" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "验证身份以解锁" } }
+      }
+    },
+    "Authentication failed. Try again." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authentication failed. Try again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "认证失败，请重试。" } }
+      }
+    },
+    "Face ID Lock" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Face ID Lock" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "面容 ID 锁定" } }
+      }
+    },
+    "Face ID is not available on this device." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Face ID is not available on this device." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此设备不支持面容 ID。" } }
+      }
+    },
+    "Unlock Proxmox Manager to access your servers" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unlock Proxmox Manager to access your servers" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解锁 Proxmox Manager 以访问服务器" } }
+      }
+    },
+
+    "Add Server" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Server" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加服务器" } }
+      }
+    },
+    "Edit Server" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit Server" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编辑服务器" } }
+      }
+    },
+    "Connected" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已连接" } }
+      }
+    },
+    "Saved Servers" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved Servers" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已保存的服务器" } }
+      }
+    },
+    "Delete Server" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete Server" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除服务器" } }
+      }
+    },
+    "Remove Server?" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Remove Server?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移除服务器？" } }
+      }
+    },
+    "Website & Support" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Website & Support" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网站与支持" } }
+      }
+    },
+    "Proxmox Manager · Manage Proxmox VE from iOS." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Proxmox Manager · Manage Proxmox VE from iOS." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Proxmox Manager · 在 iOS 上管理 Proxmox VE。" } }
+      }
+    },
+
+    "This will remove the server and all stored credentials. This action cannot be undone." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This will remove the server and all stored credentials. This action cannot be undone." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这将删除此服务器及所有已存储的凭据，操作不可撤销。" } }
+      }
+    },
+    "This will remove the server configuration and all stored credentials. This action cannot be undone." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This will remove the server configuration and all stored credentials. This action cannot be undone." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这将删除此服务器配置及所有已存储的凭据，操作不可撤销。" } }
+      }
+    },
+    "Visit the GitHub repository for documentation, issues, and privacy information." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Visit the GitHub repository for documentation, issues, and privacy information." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "访问 GitHub 仓库查看文档、问题和隐私信息。" } }
+      }
+    },
+
+    "TOTP Code Required" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "TOTP Code Required" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要 TOTP 验证码" } }
+      }
+    },
+    "Enter your two-factor authentication code." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter your two-factor authentication code." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请输入你的双因素认证码。" } }
+      }
+    },
+    "Code" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Code" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "验证码" } }
+      }
+    },
+    "Trust Self-Signed Certificate?" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Trust Self-Signed Certificate?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "信任自签名证书？" } }
+      }
+    },
+    "Only trust this certificate if you verified it on the server.\n\nSHA-256:\n%@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Only trust this certificate if you verified it on the server.\n\nSHA-256:\n%@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请确认已在服务器端核验此证书后再信任。\n\nSHA-256：\n%@" } }
+      }
+    },
+
+    "Test Connection" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Test Connection" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "测试连接" } }
+      }
+    },
+    "Testing…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Testing…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "测试中…" } }
+      }
+    },
+    "Allow self-signed certificate" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Allow self-signed certificate" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "允许自签名证书" } }
+      }
+    },
+    "The app will verify the certificate fingerprint on first connection and reject changes afterwards." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The app will verify the certificate fingerprint on first connection and reject changes afterwards." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "首次连接时会验证证书指纹，之后如有变化将拒绝连接。" } }
+      }
+    },
+    "Requires a CA-signed certificate on your Proxmox server." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Requires a CA-signed certificate on your Proxmox server." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要 Proxmox 服务器配置 CA 签名证书。" } }
+      }
+    },
+    "✓ Connected successfully" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "✓ Connected successfully" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "✓ 连接成功" } }
+      }
+    },
+
+    "Create Snapshot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Create Snapshot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "创建快照" } }
+      }
+    },
+    "Snapshot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Snapshot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "快照" } }
+      }
+    },
+    "Include memory state" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Include memory state" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "包含内存状态" } }
+      }
+    },
+    "Including memory state creates a full VM snapshot (slower, larger). Disable for a disk-only snapshot." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Including memory state creates a full VM snapshot (slower, larger). Disable for a disk-only snapshot." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "包含内存状态会创建完整虚拟机快照（较慢、较大）。关闭则仅创建磁盘快照。" } }
+      }
+    },
+    "Includes RAM state" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Includes RAM state" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "包含内存状态" } }
+      }
+    },
+    "Disk-only snapshot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Disk-only snapshot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅磁盘快照" } }
+      }
+    },
+    "Snapshot feature may be unavailable due to insufficient permissions." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Snapshot feature may be unavailable due to insufficient permissions." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "权限不足，快照功能可能不可用。" } }
+      }
+    },
+    "Create snapshot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Create snapshot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "创建快照" } }
+      }
+    },
+
+    "Forcing stop may cause data loss. Consider Shutdown instead." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Forcing stop may cause data loss. Consider Shutdown instead." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "强制停止可能导致数据丢失，建议使用关机。" } }
+      }
+    },
+    "Rollback will revert %@ to the state captured in “%@”. Any changes made after the snapshot will be lost." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rollback will revert %@ to the state captured in “%@”. Any changes made after the snapshot will be lost." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "回滚会将 %@ 恢复到快照「%@」的状态，之后的所有变更都将丢失。" } }
+      }
+    },
+
+    "Submitting action…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Submitting action…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在提交操作…" } }
+      }
+    },
+    "Waiting for Proxmox task…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for Proxmox task…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待 Proxmox 任务完成…" } }
+      }
+    },
+    "Creating snapshot…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Creating snapshot…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在创建快照…" } }
+      }
+    },
+    "Rolling back snapshot…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rolling back snapshot…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在回滚快照…" } }
+      }
+    },
+    "Deleting snapshot…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Deleting snapshot…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在删除快照…" } }
+      }
+    },
+
+    "Guests (%lld)" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Guests (%lld)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "虚拟机 (%lld)" } }
+      }
+    },
+    "Content (%lld)" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Content (%lld)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "内容 (%lld)" } }
+      }
+    },
+    "VM %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "VM %lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "虚拟机 %lld" } }
+      }
+    },
+    "Token: %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Token: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Token：%@" } }
+      }
+    },
+    "of %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "of %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "/ %@" } }
       }
     }
   },
