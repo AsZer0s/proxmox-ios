@@ -39,7 +39,7 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(!appState.canUseFaceID)
-                    .onChange(of: faceIDOn) { _, newValue in
+                    .onChange(of: faceIDOn) { newValue in
                         appState.faceIDEnabled = newValue
                     }
                     .onAppear {
