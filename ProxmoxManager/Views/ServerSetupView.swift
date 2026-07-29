@@ -46,7 +46,7 @@ struct ServerSetupView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Server") {
+                Section {
                     TextField("Name", text: $name)
                         .textInputAutocapitalization(.words)
                     TextField("Host or IP", text: $host)
@@ -55,9 +55,11 @@ struct ServerSetupView: View {
                         .keyboardType(.URL)
                     TextField("Port", text: $port)
                         .keyboardType(.numberPad)
+                } header: {
+                    Text("Server")
                 }
 
-                Section("Authentication") {
+                Section {
                     Picker("Method", selection: $authMethod) {
                         ForEach(AuthMethod.allCases) { method in
                             Text(method.label).tag(method)
@@ -80,6 +82,8 @@ struct ServerSetupView: View {
                             .autocorrectionDisabled()
                         SecureField("Token Secret", text: $tokenSecret)
                     }
+                } header: {
+                    Text("Authentication")
                 }
 
                 Section {

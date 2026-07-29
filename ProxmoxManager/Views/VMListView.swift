@@ -102,17 +102,19 @@ struct VMListView: View {
     private var filterSheet: some View {
         NavigationStack {
             Form {
-                Section("Filter by Status") {
+                Section {
                     Picker("Status", selection: $selectedStatus) {
                         Text("All").tag(nil as String?)
                         Text("Running").tag("running" as String?)
                         Text("Stopped").tag("stopped" as String?)
                     }
                     .pickerStyle(.menu)
+                } header: {
+                    Text("Filter by Status")
                 }
 
                 if !availableNodes.isEmpty {
-                    Section("Filter by Node") {
+                    Section {
                         Picker("Node", selection: $selectedNode) {
                             Text("All").tag(nil as String?)
                             ForEach(availableNodes, id: \.self) { node in
@@ -120,6 +122,8 @@ struct VMListView: View {
                             }
                         }
                         .pickerStyle(.menu)
+                    } header: {
+                        Text("Filter by Node")
                     }
                 }
             }

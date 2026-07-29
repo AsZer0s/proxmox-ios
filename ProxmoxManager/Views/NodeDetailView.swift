@@ -56,7 +56,7 @@ struct NodeDetailView: View {
 
     @ViewBuilder
     private var overviewSection: some View {
-        Section("Resources") {
+        Section {
             let cpu = model.status?.cpu ?? node.cpu
             let memoryUsed = model.status?.memory?.used ?? node.mem
             let memoryTotal = model.status?.memory?.total ?? node.maxmem
@@ -102,8 +102,9 @@ struct NodeDetailView: View {
             if let loadavg = model.status?.loadavg, !loadavg.isEmpty {
                 LabeledContent("Load average", value: loadavg.joined(separator: "  "))
             }
+        } header: {
+            Text("Resources")
         }
-    }
 
     @ViewBuilder
     private var nodeActionsSection: some View {
@@ -130,7 +131,7 @@ struct NodeDetailView: View {
 
     @ViewBuilder
     private var guestsSection: some View {
-        Section("Guests (\(model.guests.count))") {
+        Section {
             if model.guests.isEmpty {
                 Text("No VMs or containers are assigned to this node.")
                     .foregroundStyle(.secondary)
@@ -143,6 +144,8 @@ struct NodeDetailView: View {
                     }
                 }
             }
+        } header: {
+            Text("Guests (\(model.guests.count))")
         }
     }
 }

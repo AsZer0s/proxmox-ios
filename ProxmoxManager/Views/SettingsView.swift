@@ -13,7 +13,7 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 if let connected = appState.connectedServer {
-                    Section("Connected") {
+                    Section {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(connected.name).font(.headline)
                             Text("\(connected.fullUsername)@\(connected.host):\(connected.port)")
@@ -25,10 +25,12 @@ struct SettingsView: View {
                         Button("Disconnect", role: .destructive) {
                             appState.disconnect()
                         }
+                    } header: {
+                        Text("Connected")
                     }
                 }
 
-                Section("Security") {
+                Section {
                     Toggle(isOn: $faceIDOn) {
                         HStack {
                             Image(systemName: "faceid")
@@ -43,13 +45,15 @@ struct SettingsView: View {
                     .onAppear {
                         faceIDOn = appState.faceIDEnabled
                     }
+                } header: {
+                    Text("Security")
                 } footer: {
                     if !appState.canUseFaceID {
                         Text("Face ID is not available on this device.")
                     }
                 }
 
-                Section("Saved Servers") {
+                Section {
                     ForEach(appState.servers) { server in
                         Button {
                             editingServer = server
@@ -81,6 +85,8 @@ struct SettingsView: View {
                     } label: {
                         Label("Add Server", systemImage: "plus")
                     }
+                } header: {
+                    Text("Saved Servers")
                 }
 
                 Section {

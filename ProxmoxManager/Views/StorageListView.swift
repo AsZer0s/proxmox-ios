@@ -110,7 +110,7 @@ struct StorageDetailView: View {
 
     var body: some View {
         List {
-            Section("Overview") {
+            Section {
                 LabeledContent("Type", value: storage.type)
                 if let total = storage.total {
                     LabeledContent("Total", value: total.formattedBytes)
@@ -122,9 +122,11 @@ struct StorageDetailView: View {
                     LabeledContent("Available", value: avail.formattedBytes)
                 }
                 LabeledContent("Content Types", value: storage.storageTypes.joined(separator: ", "))
+            } header: {
+                Text("Overview")
             }
 
-            Section("Content (\(content.count))") {
+            Section {
                 if isLoading && content.isEmpty {
                     ProgressView()
                 } else if content.isEmpty {
@@ -151,6 +153,8 @@ struct StorageDetailView: View {
                         .padding(.vertical, 4)
                     }
                 }
+            } header: {
+                Text("Content (\(content.count))")
             }
         }
         .listStyle(.insetGrouped)

@@ -377,7 +377,7 @@ actor ProxmoxAPIService {
         storage: String,
         mode: String = "snapshot"
     ) async throws -> String {
-        var form: [String: String] = [
+        let form: [String: String] = [
             "vmid": "\(vmid)",
             "storage": storage,
             "mode": mode,
@@ -471,8 +471,7 @@ actor ProxmoxAPIService {
         request.httpMethod = "GET"
         applyAuth(to: &request)
 
-        let (data, response) = try await performAuthenticatedRequest(request)
-
+        let (data, _) = try await performAuthenticatedRequest(request)
         do {
             return try JSONDecoder().decode(ProxmoxResponse<T>.self, from: data).data
         } catch {
@@ -501,7 +500,7 @@ actor ProxmoxAPIService {
                 .data(using: .utf8)
         }
 
-        let (data, response) = try await performAuthenticatedRequest(request)
+        let (data, _) = try await performAuthenticatedRequest(request)
 
         // The UPID payload is a bare string; tolerate an empty body too.
         if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String>.self, from: data) {
@@ -519,7 +518,7 @@ actor ProxmoxAPIService {
         request.httpMethod = "DELETE"
         applyAuth(to: &request)
 
-        let (data, response) = try await performAuthenticatedRequest(request)
+        let (data, _) = try await performAuthenticatedRequest(request)
         if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String>.self, from: data) {
             return decoded.data
         }
@@ -609,12 +608,13 @@ private final class InsecureSSLDelegate: NSObject, URLSessionDelegate {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               hostMatches(challenge.protectionSpace.host),
               let trust = challenge.protectionSpace.serverTrust,
-              let certificate = SecTrustGetCertificateAtIndex(trust, 0) else {
+              let certificate = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+              let firstCert = certificate.first else {
             completionHandler(.performDefaultHandling, nil)
             return
         }
 
-        let actual = Self.fingerprint(for: certificate)
+        let actual = Self.fingerprint(for: firstCert)
         guard let expected = trustState.expectedFingerprint else {
             trustState.record(.confirmationRequired(actual))
             completionHandler(.cancelAuthenticationChallenge, nil)

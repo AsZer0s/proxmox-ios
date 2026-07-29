@@ -167,7 +167,7 @@ struct VMDetailView: View {
     @ViewBuilder
     private var resourceSection: some View {
         if let status = model.status, status.isRunning {
-            Section("Resources") {
+            Section {
                 if let cpu = status.cpu {
                     MetricBar(label: "CPU", value: cpu, detail: cpu.asPercentDetailed)
                         .padding(.vertical, 4)
@@ -180,6 +180,8 @@ struct VMDetailView: View {
                     )
                     .padding(.vertical, 4)
                 }
+            } header: {
+                Text("Resources")
             }
         }
     }
@@ -240,7 +242,7 @@ struct VMDetailView: View {
     @ViewBuilder
     private var configurationSection: some View {
         if let config = model.config {
-            Section("Configuration") {
+            Section {
                 if let name = config.name ?? config.hostname, !name.isEmpty {
                     LabeledContent("Name", value: name)
                 }
@@ -291,6 +293,8 @@ struct VMDetailView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
+            } header: {
+                Text("Configuration")
             }
         }
     }
@@ -333,7 +337,7 @@ struct VMDetailView: View {
     @ViewBuilder
     private var actionSection: some View {
         if appState.hasPrivilege("VM.PowerMgmt", for: guest.vmid) {
-            Section("Actions") {
+            Section {
                 HStack(spacing: 12) {
                     ActionButton(action: .start, isBusy: model.isPerformingAction, isEnabled: !isRunning) {
                         pendingAction = .start
@@ -350,6 +354,8 @@ struct VMDetailView: View {
                         pendingAction = .stop
                     }
                 }
+            } header: {
+                Text("Actions")
             }
         }
     }
@@ -421,12 +427,14 @@ private struct CreateSnapshotView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Snapshot") {
+                Section {
                     TextField("Name", text: $name)
                         .textInputAutocapitalization(.never)
                     TextField("Description (optional)", text: $description, axis: .vertical)
                         .lineLimit(3...6)
                     Toggle("Include memory state", isOn: $includeVMState)
+                } header: {
+                    Text("Snapshot")
                 } footer: {
                     Text("Including memory state creates a full VM snapshot (slower, larger). Disable for a disk-only snapshot.")
                 }
