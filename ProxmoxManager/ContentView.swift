@@ -2,18 +2,22 @@ import SwiftUI
 
 /// Root view. Routes between the server list (when nothing is connected) and
 /// the main dashboard (once a server connection is established).
+/// Shows the Face ID lock screen when enabled.
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
         Group {
-            if appState.isConnected {
+            if appState.appLocked {
+                AppLockView()
+            } else if appState.isConnected {
                 MainDashboardView()
             } else {
                 ServerListView()
             }
         }
         .animation(.default, value: appState.isConnected)
+        .animation(.default, value: appState.appLocked)
     }
 }
 
@@ -23,6 +27,10 @@ struct ServerListView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showingAddServer = false
     @State private var editingServer: ProxmoxServer?
+    @State private var serverToDelete: ProxmoxServer?
+    @State private var showingDeleteConfirmation = false
+    @State private var totpCode = ""
+    @State private var showingTOTP = false
 
     var body: some View {
         NavigationStack {
@@ -39,7 +47,8 @@ struct ServerListView: View {
                         .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
-                                appState.removeServer(server)
+                                serverToDelete = server
+                                showingDeleteConfirmation = true
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -79,6 +88,32 @@ struct ServerListView: View {
             } message: {
                 Text(appState.lastError ?? "")
             }
+            .alert("Remove Server?", isPresented: $showingDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    if let server = serverToDelete {
+                        appState.removeServer(server)
+                    }
+                    serverToDelete = nil
+                }
+                Button("Cancel", role: .cancel) { serverToDelete = nil }
+            } message: {
+                Text("This will remove the server and all stored credentials. This action cannot be undone.")
+            }
+            .alert("TOTP Code Required", isPresented: $showingTOTP) {
+                TextField("Code", text: $totpCode)
+                    .keyboardType(.numberPad)
+                Button("Submit") {
+                    let code = totpCode
+                    totpCode = ""
+                    Task { await appState.submitTOTP(code: code) }
+                }
+                Button("Cancel", role: .cancel) {
+                    totpCode = ""
+                    appState.pendingTFAChallenge = nil
+                }
+            } message: {
+                Text("Enter your two-factor authentication code.")
+            }
             .alert(item: $appState.pendingCertificateConfirmation) { confirmation in
                 Alert(
                     title: Text("Trust Self-Signed Certificate?"),
@@ -88,6 +123,11 @@ struct ServerListView: View {
                     },
                     secondaryButton: .cancel()
                 )
+            }
+            .onChange(of: appState.pendingTFAChallenge?.id) { _, _ in
+                if appState.pendingTFAChallenge != nil {
+                    showingTOTP = true
+                }
             }
         }
     }
@@ -111,9 +151,14 @@ struct ServerListView: View {
     private var connectingOverlay: some View {
         ZStack {
             Color.black.opacity(0.2).ignoresSafeArea()
-            ProgressView("Connecting…")
-                .padding(24)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            VStack(spacing: 12) {
+                ProgressView("Connecting…")
+                Text("Authenticating and fetching server info…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(24)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         }
     }
 
@@ -139,6 +184,14 @@ private struct ServerRow: View {
                 Text("\(server.host):\(server.port)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(server.authMethod.label)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text(server.realm)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
             Spacer()
             Image(systemName: "chevron.right")

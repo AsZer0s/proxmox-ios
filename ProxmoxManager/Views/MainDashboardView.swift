@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Root tab container shown once a server is connected. Hosts Nodes, VMs, and
-/// Settings tabs and reflects the connected server in the nav.
+/// Root tab container shown once a server is connected. Hosts Nodes, VMs,
+/// Tasks, and Settings tabs and reflects the connected server in the nav.
 struct MainDashboardView: View {
     @EnvironmentObject private var appState: AppState
 

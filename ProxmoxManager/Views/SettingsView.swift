@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Shows the connected server, lets the user switch/manage saved servers, and
-/// disconnect. Server add/edit is delegated to `ServerSetupView`.
+/// Shows the connected server, lets the user switch/manage saved servers,
+/// and disconnect. Server add/edit is delegated to `ServerSetupView`.
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
 
     @State private var editingServer: ProxmoxServer?
     @State private var showAddServer = false
+    @State private var faceIDOn: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -19,9 +20,32 @@ struct SettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        LabeledContent("Auth", value: connected.authMethod.label)
+
                         Button("Disconnect", role: .destructive) {
                             appState.disconnect()
                         }
+                    }
+                }
+
+                Section("Security") {
+                    Toggle(isOn: $faceIDOn) {
+                        HStack {
+                            Image(systemName: "faceid")
+                                .foregroundStyle(.blue)
+                            Text("Face ID Lock")
+                        }
+                    }
+                    .disabled(!appState.canUseFaceID)
+                    .onChange(of: faceIDOn) { _, newValue in
+                        appState.faceIDEnabled = newValue
+                    }
+                    .onAppear {
+                        faceIDOn = appState.faceIDEnabled
+                    }
+                } footer: {
+                    if !appState.canUseFaceID {
+                        Text("Face ID is not available on this device.")
                     }
                 }
 
@@ -36,6 +60,11 @@ struct SettingsView: View {
                                     Text("\(server.host):\(server.port)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                    if server.authMethod == .token {
+                                        Text("Token: \(server.tokenID)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                    }
                                 }
                                 Spacer()
                                 if appState.connectedServer?.id == server.id {
@@ -59,6 +88,14 @@ struct SettingsView: View {
                 } footer: {
                     Text("Proxmox Manager · Manage Proxmox VE from iOS.")
                 }
+
+                Section {
+                    Link(destination: URL(string: "https://github.com/AsZer0s/proxmox-ios")!) {
+                        Label("Website & Support", systemImage: "globe")
+                    }
+                } footer: {
+                    Text("Visit the GitHub repository for documentation, issues, and privacy information.")
+                }
             }
             .navigationTitle("Settings")
             .toolbar { EditButton() }
@@ -68,8 +105,21 @@ struct SettingsView: View {
             .sheet(item: $editingServer) { server in
                 ServerSetupView(mode: .edit(server))
             }
+            .alert("Delete Server", isPresented: $showingDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    if let server = serverToDelete {
+                        appState.removeServer(server)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will remove the server configuration and all stored credentials. This action cannot be undone.")
+            }
         }
     }
+
+    @State private var showingDeleteConfirmation = false
+    @State private var serverToDelete: ProxmoxServer?
 
     private var appVersion: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -79,7 +129,9 @@ struct SettingsView: View {
 
     private func deleteServers(at offsets: IndexSet) {
         for index in offsets {
-            appState.removeServer(appState.servers[index])
+            let server = appState.servers[index]
+            serverToDelete = server
+            showingDeleteConfirmation = true
         }
     }
 }

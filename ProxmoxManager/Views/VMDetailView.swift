@@ -19,6 +19,7 @@ struct VMDetailView: View {
             configurationSection
             snapshotsSection
             actionSection
+            nodeLinksSection
         }
         .listStyle(.insetGrouped)
         .navigationTitle(guest.displayName)
@@ -46,6 +47,9 @@ struct VMDetailView: View {
             titleVisibility: .visible
         ) {
             if let action = pendingAction {
+                if action == .stop {
+                    Text("Forcing stop may cause data loss. Consider Shutdown instead.")
+                }
                 Button(action.label, role: action.isDestructive ? .destructive : nil) {
                     Task {
                         await model.perform(
@@ -71,6 +75,7 @@ struct VMDetailView: View {
             if let snapshotAction = pendingSnapshotAction {
                 switch snapshotAction {
                 case .rollback(let snapshot):
+                    Text("Rollback will revert \(guest.displayName) to the state captured in \"\(snapshot.name)\". Any changes made after the snapshot will be lost.")
                     Button("Rollback", role: .destructive) {
                         pendingSnapshotAction = nil
                         Task {
@@ -99,11 +104,12 @@ struct VMDetailView: View {
             Button("Cancel", role: .cancel) { pendingSnapshotAction = nil }
         }
         .sheet(isPresented: $showingCreateSnapshot) {
-            CreateSnapshotView { name, description in
+            CreateSnapshotView { name, description, includeVMState in
                 Task {
                     await model.createSnapshot(
                         name: name,
                         description: description,
+                        includeVMState: includeVMState,
                         service: appState.service,
                         taskCenter: appState.taskCenter,
                         guest: guest
@@ -179,10 +185,30 @@ struct VMDetailView: View {
     }
 
     @ViewBuilder
+    private var nodeLinksSection: some View {
+        Section {
+            NavigationLink {
+                RRDChartView(
+                    node: guest.node,
+                    guest: (type: guest.type, vmid: guest.vmid)
+                )
+            } label: {
+                Label("Charts", systemImage: "chart.xyaxis.line")
+            }
+        }
+    }
+
+    @ViewBuilder
     private var snapshotsSection: some View {
         Section {
             if model.isLoadingSnapshots && model.snapshots.isEmpty {
                 ProgressView("Loading snapshots…")
+            } else if let snapError = model.snapshotError {
+                Label(snapError, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                Text("Snapshot feature may be unavailable due to insufficient permissions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else if model.snapshots.isEmpty {
                 Text("No snapshots")
                     .foregroundStyle(.secondary)
@@ -331,7 +357,7 @@ private enum SnapshotAction {
 
     var title: String {
         switch self {
-        case .rollback(let snapshot): return "Rollback \"\(snapshot.name)\"?"
+        case .rollback(let snapshot): return "Rollback \"\(snapshot.name)\"?\nThis will revert the guest to the snapshot state. Any data changes after the snapshot will be lost."
         case .delete(let snapshot): return "Delete \"\(snapshot.name)\"?"
         }
     }
@@ -362,9 +388,16 @@ private struct SnapshotRow: View {
                     .lineLimit(2)
             }
 
+            if let vmstate = snapshot.vmstate {
+                Text(vmstate == 1 ? "Includes RAM state" : "Disk-only snapshot")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
             HStack {
                 Button("Rollback", action: onRollback)
                     .buttonStyle(.bordered)
+                    .tint(.orange)
                 Button("Delete", role: .destructive, action: onDelete)
                     .buttonStyle(.bordered)
             }
@@ -377,8 +410,9 @@ private struct CreateSnapshotView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var description = ""
+    @State private var includeVMState = true
 
-    let onCreate: (String, String) -> Void
+    let onCreate: (String, String, Bool) -> Void
 
     var body: some View {
         NavigationStack {
@@ -388,6 +422,9 @@ private struct CreateSnapshotView: View {
                         .textInputAutocapitalization(.never)
                     TextField("Description (optional)", text: $description, axis: .vertical)
                         .lineLimit(3...6)
+                    Toggle("Include memory state", isOn: $includeVMState)
+                } footer: {
+                    Text("Including memory state creates a full VM snapshot (slower, larger). Disable for a disk-only snapshot.")
                 }
             }
             .navigationTitle("Create Snapshot")
@@ -398,7 +435,7 @@ private struct CreateSnapshotView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
-                        onCreate(name.trimmed, description.trimmed)
+                        onCreate(name.trimmed, description.trimmed, includeVMState)
                         dismiss()
                     }
                     .disabled(name.trimmed.isEmpty)
@@ -418,6 +455,8 @@ final class VMDetailViewModel: ObservableObject {
     @Published var taskMessage = ""
     @Published private(set) var lastUpdated: Date?
     @Published var error: String?
+    @Published var snapshotError: String?
+    @Published var configError: String?
 
     func refresh(service: ProxmoxAPIService?, guest: ProxmoxVM) async {
         guard let service = service else { return }
@@ -433,8 +472,13 @@ final class VMDetailViewModel: ObservableObject {
             config = try await service.fetchGuestConfig(
                 node: guest.node, type: guest.type, vmid: guest.vmid
             )
+            configError = nil
         } catch {
-            // Some restricted PVE accounts can read status without config access.
+            configError = error.localizedDescription
+            // Permission denied for config is fine; some accounts have limited access.
+            if !(error is ProxmoxError) || (error as? ProxmoxError).map({ if case .requestFailed(let s, _) = $0, s == 403 { return true }; return false }) != true {
+                // Only show non-permission errors
+            }
         }
 
         await loadSnapshots(service: service, guest: guest)
@@ -456,14 +500,16 @@ final class VMDetailViewModel: ObservableObject {
             snapshots = try await service.fetchSnapshots(
                 node: guest.node, type: guest.type, vmid: guest.vmid
             )
+            snapshotError = nil
         } catch {
-            // Snapshot permission is independent from guest status permission.
+            snapshotError = error.localizedDescription
         }
     }
 
     func createSnapshot(
         name: String,
         description: String,
+        includeVMState: Bool,
         service: ProxmoxAPIService?,
         taskCenter: ProxmoxTaskCenter,
         guest: ProxmoxVM
@@ -478,7 +524,8 @@ final class VMDetailViewModel: ObservableObject {
                 type: guest.type,
                 vmid: guest.vmid,
                 name: name,
-                description: description
+                description: description,
+                includeVMState: includeVMState
             )
             if !upid.isEmpty {
                 taskCenter.track(

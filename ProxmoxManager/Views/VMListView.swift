@@ -2,9 +2,37 @@ import SwiftUI
 
 /// Lists every VM and container across all nodes, backed by
 /// `/cluster/resources`. Tapping a guest opens its detail/control screen.
+/// Supports search/filter by name, VMID, node, status.
 struct VMListView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var model = VMListViewModel()
+
+    @State private var searchText = ""
+    @State private var selectedStatus: String?
+    @State private var selectedNode: String?
+    @State private var showingFilters = false
+
+    private var filteredGuests: [ProxmoxVM] {
+        var result = model.guests
+        if !searchText.isEmpty {
+            result = result.filter {
+                $0.displayName.localizedCaseInsensitiveContains(searchText) ||
+                "\($0.vmid)".contains(searchText) ||
+                $0.node.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+        if let status = selectedStatus {
+            result = result.filter { $0.status.lowercased() == status.lowercased() }
+        }
+        if let node = selectedNode {
+            result = result.filter { $0.node == node }
+        }
+        return result
+    }
+
+    private var availableNodes: [String] {
+        Array(Set(model.guests.map(\.node))).sorted()
+    }
 
     var body: some View {
         NavigationStack {
@@ -25,7 +53,7 @@ struct VMListView: View {
                 } else {
                     List {
                         ForEach(GuestType.allCases, id: \.self) { type in
-                            let items = model.guests(ofType: type)
+                            let items = filteredGuests.filter { $0.type == type }
                             if !items.isEmpty {
                                 Section(type == .qemu ? "Virtual Machines" : "Containers") {
                                     ForEach(items) { guest in
@@ -40,17 +68,28 @@ struct VMListView: View {
                         }
                     }
                     .listStyle(.insetGrouped)
+                    .searchable(text: $searchText, prompt: "Search by name, VMID, or node")
                 }
             }
             .navigationTitle("VMs & CTs")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if let lastUpdated = model.lastUpdated {
-                        Text(lastUpdated, style: .time)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        if let lastUpdated = model.lastUpdated {
+                            Text(lastUpdated, style: .time)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button {
+                            showingFilters = true
+                        } label: {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                        }
                     }
                 }
+            }
+            .sheet(isPresented: $showingFilters) {
+                filterSheet
             }
             .refreshable { await model.load(service: appState.service) }
             .task {
@@ -58,6 +97,47 @@ struct VMListView: View {
                 await model.refreshLoop(service: appState.service)
             }
         }
+    }
+
+    private var filterSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Filter by Status") {
+                    Picker("Status", selection: $selectedStatus) {
+                        Text("All").tag(nil as String?)
+                        Text("Running").tag("running" as String?)
+                        Text("Stopped").tag("stopped" as String?)
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                if !availableNodes.isEmpty {
+                    Section("Filter by Node") {
+                        Picker("Node", selection: $selectedNode) {
+                            Text("All").tag(nil as String?)
+                            ForEach(availableNodes, id: \.self) { node in
+                                Text(node).tag(node as String?)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
+            }
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showingFilters = false }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") {
+                        selectedStatus = nil
+                        selectedNode = nil
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }
 
@@ -91,10 +171,6 @@ final class VMListViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     @Published private(set) var lastUpdated: Date?
-
-    func guests(ofType type: GuestType) -> [ProxmoxVM] {
-        guests.filter { $0.type == type }
-    }
 
     func load(service: ProxmoxAPIService?) async {
         guard let service = service else { return }

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import LocalAuthentication
 
 /// App-wide state: the list of configured servers, the currently connected
 /// server + its authenticated service, and the connection lifecycle.
@@ -14,6 +15,12 @@ struct CertificateConfirmation: Identifiable {
     let fingerprint: String
 }
 
+struct TFAChallengeState: Identifiable {
+    let id = UUID()
+    let serverID: UUID
+    let challenge: ProxmoxTFAChallenge
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var servers: [ProxmoxServer]
@@ -22,6 +29,9 @@ final class AppState: ObservableObject {
     @Published private(set) var connectionState: ConnectionState = .disconnected
     @Published var lastError: String?
     @Published var pendingCertificateConfirmation: CertificateConfirmation?
+    @Published var pendingTFAChallenge: TFAChallengeState?
+    @Published var permissions: ProxmoxPermissions?
+    @Published var appLocked = true
     let taskCenter = ProxmoxTaskCenter()
     private var authenticationObserver: NSObjectProtocol?
 
@@ -32,6 +42,17 @@ final class AppState: ObservableObject {
     }
 
     var isConnected: Bool { connectionState == .connected }
+
+    /// App lock / Face ID preference stored in UserDefaults.
+    var faceIDEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "faceIDEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "faceIDEnabled") }
+    }
+
+    /// Whether Face ID is available on this device.
+    var canUseFaceID: Bool {
+        LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+    }
 
     init() {
         self.servers = ServerStore.load()
@@ -45,12 +66,39 @@ final class AppState: ObservableObject {
             self?.disconnect()
             self?.lastError = ProxmoxError.notAuthenticated.localizedDescription
         }
+        // Auto-lock if Face ID is enabled
+        if UserDefaults.standard.bool(forKey: "faceIDEnabled") {
+            appLocked = true
+        } else {
+            appLocked = false
+        }
     }
 
     deinit {
         if let authenticationObserver {
             NotificationCenter.default.removeObserver(authenticationObserver)
         }
+    }
+
+    /// Authenticate via Face ID / Touch ID to unlock the app.
+    func authenticateWithBiometrics() async -> Bool {
+        let context = LAContext()
+        do {
+            let reason = NSLocalizedString("Unlock Proxmox Manager to access your servers", comment: "Face ID prompt")
+            try await context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason)
+            appLocked = false
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Check if the current user has a specific PVE privilege on a path.
+    func hasPrivilege(_ privilege: String, for vmid: Int? = nil) -> Bool {
+        guard let permissions else { return false }
+        let vmPath = vmid.map { "/vms/\($0)" } ?? ""
+        if !vmPath.isEmpty, permissions.hasPrivilege(privilege, on: vmPath) { return true }
+        return permissions.hasPrivilege(privilege, on: "")
     }
 
     // MARK: - Server management
@@ -97,6 +145,7 @@ final class AppState: ObservableObject {
     func connect(to server: ProxmoxServer, secret: String) async {
         connectionState = .connecting
         lastError = nil
+        pendingTFAChallenge = nil
 
         let service = ProxmoxAPIService(server: server, tokenValue: server.authMethod == .token ? secret : nil)
         do {
@@ -106,21 +155,58 @@ final class AppState: ObservableObject {
             self.service = service
             self.connectedServer = server
             self.connectionState = .connected
+            // Load permissions after successful connection
+            if let permissions = try? await service.fetchPermissions() {
+                self.permissions = permissions
+            }
         } catch let error as ProxmoxError {
             self.connectionState = .disconnected
-            if case let .certificateConfirmationRequired(_, fingerprint) = error {
+            switch error {
+            case .certificateConfirmationRequired(_, let fingerprint):
                 self.pendingCertificateConfirmation = CertificateConfirmation(
                     server: server,
                     fingerprint: fingerprint
                 )
                 self.lastError = nil
-            } else {
+            case .tfaRequired:
+                // Re-init service and authenticate with TOTP
+                let newService = ProxmoxAPIService(server: server)
+                try? await newService.authenticate(password: secret)
+                // The challenge is captured in the service actor
+                self.service = newService
+                self.connectedServer = server
+                self.pendingTFAChallenge = TFAChallengeState(
+                    serverID: server.id,
+                    challenge: ProxmoxTFAChallenge(tfa: "", tfaChallenge: "", username: server.fullUsername)
+                )
+            default:
                 self.lastError = error.localizedDescription
             }
         } catch {
             self.connectionState = .disconnected
             self.lastError = error.localizedDescription
         }
+    }
+
+    /// Complete a TOTP challenge during login.
+    func submitTOTP(code: String) async {
+        guard let service = service, let challenge = pendingTFAChallenge else { return }
+        pendingTFAChallenge = nil
+        do {
+            try await service.authenticateTOTP(code: code)
+            self.connectionState = .connected
+        } catch {
+            self.lastError = error.localizedDescription
+            self.connectionState = .disconnected
+            self.service = nil
+            self.connectedServer = nil
+        }
+    }
+
+    /// Refresh permissions for the current server.
+    func refreshPermissions() async {
+        guard let service else { return }
+        permissions = try? await service.fetchPermissions()
     }
 
     func trustPendingCertificate() async {
@@ -142,5 +228,6 @@ final class AppState: ObservableObject {
         service = nil
         connectedServer = nil
         connectionState = .disconnected
+        permissions = nil
     }
 }

@@ -19,6 +19,7 @@ struct NodeDetailView: View {
                 List {
                     overviewSection
                     guestsSection
+                    nodeActionsSection
 
                     if let error = model.error {
                         Section {
@@ -100,6 +101,29 @@ struct NodeDetailView: View {
 
             if let loadavg = model.status?.loadavg, !loadavg.isEmpty {
                 LabeledContent("Load average", value: loadavg.joined(separator: "  "))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var nodeActionsSection: some View {
+        Section {
+            NavigationLink {
+                StorageListView(node: node.node)
+            } label: {
+                Label("Storage", systemImage: "externaldrive")
+            }
+
+            NavigationLink {
+                BackupsView(node: node.node)
+            } label: {
+                Label("Backups", systemImage: "clock.arrow.circlepath")
+            }
+
+            NavigationLink {
+                RRDChartView(node: node.node)
+            } label: {
+                Label("Charts", systemImage: "chart.xyaxis.line")
             }
         }
     }
