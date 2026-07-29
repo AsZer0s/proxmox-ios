@@ -5,6 +5,7 @@ import SwiftUI
 /// Supports search/filter by name, VMID, node, status.
 struct VMListView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = VMListViewModel()
 
     @State private var searchText = ""
@@ -96,6 +97,16 @@ struct VMListView: View {
                 await model.load(service: appState.service)
                 await model.refreshLoop(service: appState.service)
             }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active {
+                    Task {
+                        await model.load(service: appState.service)
+                        await model.refreshLoop(service: appState.service)
+                    }
+                } else if phase == .background {
+                    model.stopRefresh()
+                }
+            }
         }
     }
 
@@ -176,6 +187,8 @@ final class VMListViewModel: ObservableObject {
     @Published var error: String?
     @Published private(set) var lastUpdated: Date?
 
+    private var refreshTask: Task<Void, Never>?
+
     func load(service: ProxmoxAPIService?) async {
         guard let service = service else { return }
         isLoading = true
@@ -210,11 +223,19 @@ final class VMListViewModel: ObservableObject {
     }
 
     func refreshLoop(service: ProxmoxAPIService?) async {
-        while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 30_000_000_000)
-            guard !Task.isCancelled else { return }
-            await load(service: service)
+        stopRefresh()
+        refreshTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard !Task.isCancelled else { return }
+                await load(service: service)
+            }
         }
+    }
+
+    func stopRefresh() {
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 }
 

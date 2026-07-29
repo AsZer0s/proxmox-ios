@@ -4,6 +4,7 @@ import SwiftUI
 /// reboot actions with a confirmation for destructive ones.
 struct VMDetailView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = VMDetailViewModel()
 
     let guest: ProxmoxVM
@@ -37,6 +38,16 @@ struct VMDetailView: View {
         .task {
             await model.refresh(service: appState.service, guest: guest)
             await model.refreshLoop(service: appState.service, guest: guest)
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                Task {
+                    await model.refresh(service: appState.service, guest: guest)
+                    await model.refreshLoop(service: appState.service, guest: guest)
+                }
+            } else if phase == .background {
+                model.stopRefresh()
+            }
         }
         .confirmationDialog(
             pendingAction.map { "\($0.label) \(guest.displayName)?" } ?? "",
@@ -470,6 +481,8 @@ final class VMDetailViewModel: ObservableObject {
     @Published var snapshotError: String?
     @Published var configError: String?
 
+    private var refreshTask: Task<Void, Never>?
+
     func refresh(service: ProxmoxAPIService?, guest: ProxmoxVM) async {
         guard let service = service else { return }
         do {
@@ -498,11 +511,19 @@ final class VMDetailViewModel: ObservableObject {
     }
 
     func refreshLoop(service: ProxmoxAPIService?, guest: ProxmoxVM) async {
-        while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
-            guard !Task.isCancelled else { return }
-            await refresh(service: service, guest: guest)
+        stopRefresh()
+        refreshTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                guard !Task.isCancelled else { return }
+                await refresh(service: service, guest: guest)
+            }
         }
+    }
+
+    func stopRefresh() {
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
     private func loadSnapshots(service: ProxmoxAPIService, guest: ProxmoxVM) async {

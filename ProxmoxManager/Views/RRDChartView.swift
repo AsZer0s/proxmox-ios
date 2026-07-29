@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Historical CPU / memory / disk / network charts from RRD data.
+/// Uses a native SwiftUI Canvas-based line chart with gradient fill.
 struct RRDChartView: View {
     @EnvironmentObject private var appState: AppState
     @State private var dataPoints: [RRDDataPoint] = []
@@ -68,41 +69,111 @@ struct RRDChartView: View {
         .navigationTitle(metricLabel)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: selectedTimeframe) { await load() }
-        .task(id: selectedMetric) { /* visual only */ }
     }
 
     @ViewBuilder
     private var chartContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                // Simple bar chart representation using progress bars
-                let values = chartValues()
-                let maxValue = values.max() ?? 1
-                let labelCount = min(values.count, 12)
+        let values = chartValues()
+        let maxValue = values.max() ?? 1
+        let minValue: Double = 0
 
-                ForEach(0..<labelCount, id: \.self) { i in
-                    let idx = max(0, values.count - labelCount + i)
-                    let val = values[idx]
-                    let fraction = maxValue > 0 ? val / maxValue : 0
+        VStack(spacing: 8) {
+            // Line chart canvas
+            GeometryReader { geometry in
+                let width = geometry.size.width
+                let height = geometry.size.height - 20
+                let chartWidth = width - 16  // padding
 
-                    HStack(spacing: 8) {
-                        Text(formattedTime(for: idx))
+                ZStack(alignment: .topLeading) {
+                    // Grid lines
+                    ForEach(0..<5, id: \.self) { i in
+                        let y = height * Double(i) / 4
+                        Path { path in
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: width, y: y))
+                        }
+                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+
+                        Text(formattedGridValue(maxValue * (1 - Double(i) / 4)))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                            .frame(width: 50, alignment: .trailing)
-
-                        ProgressView(value: fraction)
-                            .tint(chartColor(fraction))
-
-                        Text(formattedValue(val))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 60, alignment: .trailing)
+                            .position(x: width - 30, y: y)
                     }
-                    .padding(.horizontal)
+
+                    // Line path
+                    if values.count > 1 {
+                        let stepX = chartWidth / Double(values.count - 1)
+                        let range = max(maxValue - minValue, 0.001)
+
+                        // Gradient fill
+                        Path { path in
+                            path.move(to: CGPoint(x: 0, y: height))
+                            for (i, val) in values.enumerated() {
+                                let x = Double(i) * stepX
+                                let y = height - (val - minValue) / range * height
+                                path.addLine(to: CGPoint(x: x, y: y))
+                            }
+                            path.addLine(to: CGPoint(x: Double(values.count - 1) * stepX, y: height))
+                            path.closeSubpath()
+                        }
+                        .fill(
+                            LinearGradient(
+                                colors: [chartColor(0.5).opacity(0.3), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                        // Line stroke
+                        Path { path in
+                            path.move(to: CGPoint(x: 0, y: height - (values[0] - minValue) / range * height))
+                            for (i, val) in values.enumerated() {
+                                let x = Double(i) * stepX
+                                let y = height - (val - minValue) / range * height
+                                path.addLine(to: CGPoint(x: x, y: y))
+                            }
+                        }
+                        .stroke(chartColor(0.5), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    }
+
+                    // Time labels
+                    HStack {
+                        if let first = dataPoints.first {
+                            Text(formattedTime(for: 0))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if dataPoints.count > 1 {
+                            Text(formattedTime(for: dataPoints.count - 1))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.top, height + 4)
                 }
+                .padding(.horizontal, 8)
             }
-            .padding(.vertical)
+            .frame(height: 220)
+
+            // Legend / stats
+            HStack(spacing: 16) {
+                Label(
+                    "Avg: \(formattedValue(chartAverage(values)))",
+                    systemImage: "circle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(chartColor(0.5))
+
+                Label(
+                    "Max: \(formattedValue(maxValue))",
+                    systemImage: "circle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+            .padding(.horizontal)
+            .padding(.bottom)
         }
     }
 
@@ -131,7 +202,7 @@ struct RRDChartView: View {
         dataPoints.map { dp in
             switch selectedMetric {
             case "cpu": return dp.cpu ?? 0
-            case "memory": return (dp.mem ?? 0) / max(dp.maxmem ?? 1, 1)
+            case "memory": return dp.mem ?? 0  // absolute byte value
             case "network": return (dp.netin ?? 0) + (dp.netout ?? 0)
             case "disk": return (dp.diskread ?? 0) + (dp.diskwrite ?? 0)
             default: return dp.value ?? 0
@@ -139,13 +210,35 @@ struct RRDChartView: View {
         }
     }
 
+    private func chartAverage(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0 }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
     private func formattedValue(_ val: Double) -> String {
         switch selectedMetric {
-        case "cpu": return "\(Int(val * 100))%"
-        case "memory": return "\(Int(val * 100))%"
-        case "network": return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
-        case "disk": return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
-        default: return String(format: "%.1f", val)
+        case "cpu":
+            // RRD cpu for node is fraction 0-1, for guest is fraction 0-1
+            return String(format: "%.1f%%", val * 100)
+        case "memory":
+            return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .memory)
+        case "network":
+            return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
+        case "disk":
+            return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
+        default:
+            return String(format: "%.1f", val)
+        }
+    }
+
+    private func formattedGridValue(_ val: Double) -> String {
+        switch selectedMetric {
+        case "cpu":
+            return String(format: "%.0f%%", val * 100)
+        case "memory", "network", "disk":
+            return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
+        default:
+            return String(format: "%.1f", val)
         }
     }
 
@@ -154,7 +247,7 @@ struct RRDChartView: View {
         let time = dataPoints[index].time
         let date = Date(timeIntervalSince1970: Double(time))
         let formatter = DateFormatter()
-        formatter.dateFormat = selectedTimeframe == "hour" ? "HH:mm" : "MM/dd"
+        formatter.dateFormat = selectedTimeframe == "hour" ? "HH:mm" : "MM/dd HH:mm"
         return formatter.string(from: date)
     }
 

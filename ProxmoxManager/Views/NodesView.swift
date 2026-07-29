@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// Lists the cluster's nodes with live CPU / memory / uptime, backed by
-/// `/nodes`. Pull to refresh; auto-loads on appear.
+/// `/nodes`. Pull to refresh; auto-loads on appear with 30s foreground refresh.
 struct NodesView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = NodesViewModel()
 
     var body: some View {
@@ -53,12 +54,30 @@ struct NodesView: View {
                 await model.load(service: appState.service)
                 await model.refreshLoop(service: appState.service)
             }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active {
+                    Task {
+                        await model.load(service: appState.service)
+                        await model.refreshLoop(service: appState.service)
+                    }
+                } else if phase == .background {
+                    model.stopRefresh()
+                }
+            }
         }
     }
 }
 
 private struct NodeRow: View {
     let node: ProxmoxNode
+
+    /// CPU is a raw cpuload value, not 0-1. Normalize against maxcpu.
+    private var cpuFraction: Double? {
+        guard let cpu = node.cpu, let maxcpu = node.maxcpu, maxcpu > 0 else {
+            return nil
+        }
+        return min(cpu / Double(maxcpu), 1.0)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -72,7 +91,7 @@ private struct NodeRow: View {
                     .foregroundStyle(.secondary)
             }
 
-            if let cpu = node.cpu {
+            if let cpu = cpuFraction {
                 MetricBar(label: "CPU", value: cpu, detail: cpu.asPercentDetailed)
             }
 
@@ -103,6 +122,8 @@ final class NodesViewModel: ObservableObject {
     @Published var error: String?
     @Published private(set) var lastUpdated: Date?
 
+    private var refreshTask: Task<Void, Never>?
+
     func load(service: ProxmoxAPIService?) async {
         guard let service = service else { return }
         isLoading = true
@@ -117,11 +138,19 @@ final class NodesViewModel: ObservableObject {
     }
 
     func refreshLoop(service: ProxmoxAPIService?) async {
-        while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 30_000_000_000)
-            guard !Task.isCancelled else { return }
-            await load(service: service)
+        stopRefresh()
+        refreshTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard !Task.isCancelled else { return }
+                await load(service: service)
+            }
         }
+    }
+
+    func stopRefresh() {
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 }
 

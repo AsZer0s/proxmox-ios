@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NodeDetailView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = NodeDetailViewModel()
 
     let node: ProxmoxNode
@@ -38,6 +39,16 @@ struct NodeDetailView: View {
             await model.load(service: appState.service, node: node)
             await model.refreshLoop(service: appState.service, node: node)
         }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                Task {
+                    await model.load(service: appState.service, node: node)
+                    await model.refreshLoop(service: appState.service, node: node)
+                }
+            } else if phase == .background {
+                model.stopRefresh()
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 if let lastUpdated = model.lastUpdated {
@@ -57,19 +68,23 @@ struct NodeDetailView: View {
     @ViewBuilder
     private var overviewSection: some View {
         Section {
-            let cpu = model.status?.cpu ?? node.cpu
+            // CPU: normalize against maxcpu — API returns raw cpuload, not 0-1 fraction
+            let rawCPU = model.status?.cpu ?? node.cpu
+            let maxCPU = Double(model.status?.cpus ?? node.maxcpu ?? 8)
+            let cpuFraction = rawCPU.map { maxCPU > 0 ? min($0 / maxCPU, 1.0) : 0 } ?? 0
+
             let memoryUsed = model.status?.memory?.used ?? node.mem
             let memoryTotal = model.status?.memory?.total ?? node.maxmem
             let diskUsed = model.status?.rootfs?.used ?? node.disk
             let diskTotal = model.status?.rootfs?.total ?? node.maxdisk
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                if let cpu {
+                if rawCPU != nil {
                     ResourceCard(
                         title: "CPU",
-                        value: cpu.asPercent,
+                        value: cpuFraction.asPercent,
                         systemImage: "cpu",
-                        fraction: cpu
+                        fraction: cpuFraction
                     )
                 }
 
@@ -181,6 +196,8 @@ final class NodeDetailViewModel: ObservableObject {
     @Published var error: String?
     @Published private(set) var lastUpdated: Date?
 
+    private var refreshTask: Task<Void, Never>?
+
     func load(service: ProxmoxAPIService?, node: ProxmoxNode) async {
         guard let service else { return }
         isLoading = true
@@ -205,11 +222,19 @@ final class NodeDetailViewModel: ObservableObject {
     }
 
     func refreshLoop(service: ProxmoxAPIService?, node: ProxmoxNode) async {
-        while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 30_000_000_000)
-            guard !Task.isCancelled else { return }
-            await load(service: service, node: node)
+        stopRefresh()
+        refreshTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard !Task.isCancelled else { return }
+                await load(service: service, node: node)
+            }
         }
+    }
+
+    func stopRefresh() {
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 }
 
