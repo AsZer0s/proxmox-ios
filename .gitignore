@@ -36,3 +36,4 @@ fastlane/test_output
 .Trashes
 ehthumbs.db
 Thumbs.db
+ProxmoxManager.xcodeproj

@@ -26,15 +26,19 @@ enum ServerStore {
 
 // MARK: - Keychain
 
-/// Minimal Keychain wrapper for storing per-server passwords. Keyed by the
-/// server's UUID so removing a server can clean up its secret.
+/// Minimal Keychain wrapper for storing per-server secrets. Keyed by the
+/// server's UUID so removing a server can clean up its secrets.
 enum KeychainHelper {
     private static let service = "com.aszer0s.proxmoxmanager"
 
+    private static func account(for serverID: UUID, suffix: String = "") -> String {
+        suffix.isEmpty ? serverID.uuidString : "\(serverID.uuidString).\(suffix)"
+    }
+
     @discardableResult
-    static func savePassword(_ password: String, for serverID: UUID) -> Bool {
-        let account = serverID.uuidString
-        guard let data = password.data(using: .utf8) else { return false }
+    static func saveSecret(_ secret: String, authMethod: AuthMethod, for serverID: UUID) -> Bool {
+        let account = self.account(for: serverID, suffix: authMethod == .token ? "token" : "password")
+        guard let data = secret.data(using: .utf8) else { return false }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -49,9 +53,26 @@ enum KeychainHelper {
         return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 
+    static func secret(authMethod: AuthMethod, for serverID: UUID) -> String? {
+        let account = self.account(for: serverID, suffix: authMethod == .token ? "token" : "password")
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
     @discardableResult
     static func saveCertificateFingerprint(_ fingerprint: String, for serverID: UUID) -> Bool {
-        let account = "\(serverID.uuidString).certificate"
+        let account = self.account(for: serverID, suffix: "certificate")
         guard let data = fingerprint.data(using: .utf8) else { return false }
 
         let query: [String: Any] = [
@@ -71,7 +92,7 @@ enum KeychainHelper {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: "\(serverID.uuidString).certificate",
+            kSecAttrAccount as String: self.account(for: serverID, suffix: "certificate"),
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
@@ -83,43 +104,25 @@ enum KeychainHelper {
         return String(data: data, encoding: .utf8)
     }
 
-    static func password(for serverID: UUID) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: serverID.uuidString,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
+    @discardableResult
+    static func deleteCredentials(for serverID: UUID) -> Bool {
+        let accounts = [
+            self.account(for: serverID),
+            self.account(for: serverID, suffix: "password"),
+            self.account(for: serverID, suffix: "token"),
+            self.account(for: serverID, suffix: "certificate"),
         ]
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let password = String(data: data, encoding: .utf8) else {
-            return nil
+        var allOk = true
+        for account in accounts {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
+            let status = SecItemDelete(query as CFDictionary)
+            if status != errSecSuccess && status != errSecItemNotFound {
+                allOk = false
+            }
         }
-        return password
+        return allOk
     }
-
-    @discardableResult
-    static func deletePassword(for serverID: UUID) -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: serverID.uuidString,
-        ]
-        let passwordStatus = SecItemDelete(query as CFDictionary)
-        let certificateStatus = deleteCertificateFingerprint(for: serverID)
-        return (passwordStatus == errSecSuccess || passwordStatus == errSecItemNotFound) && certificateStatus
-    }
-
-    @discardableResult
-    private static func deleteCertificateFingerprint(for serverID: UUID) -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: "\(serverID.uuidString).certificate",
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
-    }
-}

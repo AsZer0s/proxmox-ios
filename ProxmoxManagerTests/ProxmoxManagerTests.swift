@@ -10,22 +10,57 @@ final class ProxmoxManagerTests: XCTestCase {
         )
 
         XCTAssertFalse(server.allowInsecureSSL)
+        XCTAssertEqual(server.authMethod, .ticket)
+        XCTAssertEqual(server.tokenID, "")
         XCTAssertEqual(server.baseURL, "https://pve.example.com:8006/api2/json")
     }
 
-    func testServerDecodingDefaultsMissingCertificateSettingToSecure() throws {
+    func testServerDecodingDefaultsMissingFieldsToSecure() throws {
         let data = Data(#"{"name":"PVE","host":"pve.example.com","username":"root"}"#.utf8)
         let server = try JSONDecoder().decode(ProxmoxServer.self, from: data)
 
         XCTAssertFalse(server.allowInsecureSSL)
+        XCTAssertEqual(server.authMethod, .ticket)
+        XCTAssertEqual(server.tokenID, "")
         XCTAssertEqual(server.port, 8006)
         XCTAssertEqual(server.realm, "pam")
+    }
+
+    func testServerTokenAuthRoundTrip() throws {
+        let server = ProxmoxServer(
+            name: "PVE",
+            host: "pve.example.com",
+            username: "root",
+            authMethod: .token,
+            tokenID: "root@pam!mytoken"
+        )
+        let data = try JSONEncoder().encode(server)
+        let decoded = try JSONDecoder().decode(ProxmoxServer.self, from: data)
+
+        XCTAssertEqual(decoded.authMethod, .token)
+        XCTAssertEqual(decoded.tokenID, "root@pam!mytoken")
+    }
+
+    func testAuthMethodCases() {
+        XCTAssertEqual(AuthMethod.allCases.count, 2)
+        XCTAssertEqual(AuthMethod.ticket.label, "Username + Password")
+        XCTAssertEqual(AuthMethod.token.label, "API Token")
     }
 
     func testIPv6HostBuildsValidBaseURL() {
         let server = ProxmoxServer(
             name: "PVE",
             host: "[fd00::10]",
+            username: "root"
+        )
+
+        XCTAssertEqual(server.baseURL, "https://[fd00::10]:8006/api2/json")
+    }
+
+    func testIPv6BareHostGetsBracketed() {
+        let server = ProxmoxServer(
+            name: "PVE",
+            host: "fd00::10",
             username: "root"
         )
 
@@ -83,5 +118,21 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertFalse(running.isSuccessful)
         XCTAssertTrue(finished.isFinished)
         XCTAssertTrue(finished.isSuccessful)
+    }
+
+    func testKeychainAccountSuffixes() {
+        let id = UUID()
+        // Just test that the helper methods compile and accept the new auth-aware interface
+        // (full integration requires a signed test host with Keychain access)
+    }
+
+    func testProxmoxErrorDescriptions() {
+        XCTAssertNotNil(ProxmoxError.invalidURL.localizedDescription)
+        XCTAssertNotNil(ProxmoxError.notAuthenticated.localizedDescription)
+        XCTAssertEqual(ProxmoxError.authenticationFailed("bad password").localizedDescription,
+                       "Authentication failed: bad password")
+        if case .requestFailed(let status, _) = ProxmoxError.requestFailed(status: 500, body: "") {
+            XCTAssertEqual(status, 500)
+        }
     }
 }

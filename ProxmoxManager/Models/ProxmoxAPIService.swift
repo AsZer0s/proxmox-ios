@@ -15,6 +15,7 @@ enum ProxmoxError: LocalizedError {
     case taskFailed(String)
     case taskTimeout
     case network(String)
+    case tfaRequired
 
     var errorDescription: String? {
         switch self {
@@ -38,6 +39,8 @@ enum ProxmoxError: LocalizedError {
             return "The Proxmox task timed out. Check the task log on the server."
         case .network(let msg):
             return "Network error: \(msg)"
+        case .tfaRequired:
+            return "Two-factor authentication is required. Enter your TOTP code."
         }
     }
 }
@@ -56,9 +59,14 @@ actor ProxmoxAPIService {
 
     private var ticket: String?
     private var csrfToken: String?
+    private var tokenValue: String?
+    private var tfaChallenge: ProxmoxTFAChallenge?
+    /// Stored password for transparent 401 retries.
+    private var storedPassword: String?
 
-    init(server: ProxmoxServer) {
+    init(server: ProxmoxServer, tokenValue: String? = nil) {
         self.server = server
+        self.tokenValue = tokenValue
 
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 20
@@ -87,20 +95,14 @@ actor ProxmoxAPIService {
     // MARK: Authentication
 
     /// Logs in with a password and stores the ticket + CSRF token for
-    /// subsequent requests.
+    /// subsequent requests. Throws `.tfaRequired` if a TOTP second factor
+    /// challenge is received; call `authenticateTOTP(code:)` to complete it.
     func authenticate(password: String) async throws {
-        guard let url = URL(string: "\(server.baseURL)/access/ticket") else {
-            throw ProxmoxError.invalidURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        storedPassword = password
 
         let body = "username=\(server.fullUsername.formURLEncoded)&password=\(password.formURLEncoded)"
-        request.httpBody = body.data(using: .utf8)
 
-        let (data, response) = try await performRequest(request)
+        let (data, response) = try await postLogin(body: body)
         guard let http = response as? HTTPURLResponse else {
             throw ProxmoxError.network("No HTTP response")
         }
@@ -111,16 +113,86 @@ actor ProxmoxAPIService {
             )
         }
 
+        let decoded = try JSONDecoder().decode(ProxmoxResponse<ProxmoxTicketPayload>.self, from: data)
+
+        // If ticket is empty, PVE is requesting TOTP second factor.
+        if decoded.data.ticket.isEmpty, let tfaChallenge = decoded.data.tfa {
+            self.tfaChallenge = ProxmoxTFAChallenge(
+                tfa: tfaChallenge,
+                tfaChallenge: decoded.data.tfaChallenge ?? tfaChallenge,
+                username: decoded.data.username
+            )
+            throw ProxmoxError.tfaRequired
+        }
+
+        guard !decoded.data.ticket.isEmpty else {
+            throw ProxmoxError.authenticationFailed("Empty ticket received.")
+        }
+
+        self.ticket = decoded.data.ticket
+        self.csrfToken = decoded.data.csrfToken
+    }
+
+    /// Complete a TOTP challenge. Call this after receiving `.tfaRequired`.
+    func authenticateTOTP(code: String) async throws {
+        guard let challenge = tfaChallenge else {
+            throw ProxmoxError.authenticationFailed("No pending TFA challenge.")
+        }
+
+        let body = "username=\(server.fullUsername.formURLEncoded)" +
+            "&password=\(challenge.tfa.formURLEncoded)" +
+            "&tfa-challenge=\(challenge.tfaChallenge.formURLEncoded)" +
+            "&tfa-code=\(code.formURLEncoded)"
+
+        let (data, response) = try await postLogin(body: body)
+        guard let http = response as? HTTPURLResponse else {
+            throw ProxmoxError.network("No HTTP response")
+        }
+
+        guard http.statusCode == 200 else {
+            throw ProxmoxError.authenticationFailed(
+                http.statusCode == 401 ? "Invalid TOTP code" : "TFA authentication failed (HTTP \(http.statusCode))."
+            )
+        }
+
         do {
-            let decoded = try JSONDecoder().decode(ProxmoxResponse<ProxmoxTicket>.self, from: data)
+            let decoded = try JSONDecoder().decode(ProxmoxResponse<ProxmoxTicketPayload>.self, from: data)
+            guard !decoded.data.ticket.isEmpty else {
+                throw ProxmoxError.authenticationFailed("TOTP verification failed.")
+            }
             self.ticket = decoded.data.ticket
             self.csrfToken = decoded.data.csrfToken
+            self.tfaChallenge = nil
+        } catch let error as ProxmoxError {
+            throw error
         } catch {
             throw ProxmoxError.decodingFailed(error.localizedDescription)
         }
     }
 
-    var isAuthenticated: Bool { ticket != nil }
+    private func postLogin(body: String) async throws -> (Data, URLResponse) {
+        guard let url = URL(string: "\(server.baseURL)/access/ticket") else {
+            throw ProxmoxError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body.data(using: .utf8)
+
+        return try await performRequest(request)
+    }
+
+    /// Authenticate using an API Token. No login request needed — the token
+    /// is sent as a header on every request.
+    func authenticateWithToken() {
+        guard let tokenValue = tokenValue, !tokenValue.isEmpty else { return }
+        // Token is already set from init; mark as authenticated.
+    }
+
+    var isAuthenticated: Bool {
+        server.authMethod == .token ? (tokenValue?.isEmpty == false) : (ticket != nil)
+    }
 
     func logout() {
         ticket = nil
@@ -144,20 +216,25 @@ actor ProxmoxAPIService {
 
     /// Fetches both QEMU VMs and LXC containers for a node and tags each guest
     /// with its node + type so the UI can drive control actions.
+    /// Each type is fetched independently so a permission error on one type
+    /// (common with restricted API Token accounts) doesn't block the other.
     func fetchGuests(node: String) async throws -> [ProxmoxVM] {
-        async let qemu = get("/nodes/\(node)/qemu", as: [ProxmoxVM].self)
-        async let lxc = get("/nodes/\(node)/lxc", as: [ProxmoxVM].self)
-
         var guests: [ProxmoxVM] = []
-        for var vm in try await qemu {
-            vm.node = node
-            vm.type = .qemu
-            guests.append(vm)
+        // Try QEMU
+        if let qemu = try? await get("/nodes/\(node)/qemu", as: [ProxmoxVM].self) {
+            for var vm in qemu {
+                vm.node = node
+                vm.type = .qemu
+                guests.append(vm)
+            }
         }
-        for var ct in try await lxc {
-            ct.node = node
-            ct.type = .lxc
-            guests.append(ct)
+        // Try LXC
+        if let lxc = try? await get("/nodes/\(node)/lxc", as: [ProxmoxVM].self) {
+            for var ct in lxc {
+                ct.node = node
+                ct.type = .lxc
+                guests.append(ct)
+            }
         }
         return guests.sorted { $0.vmid < $1.vmid }
     }
@@ -182,14 +259,15 @@ actor ProxmoxAPIService {
         type: GuestType,
         vmid: Int,
         name: String,
-        description: String?
+        description: String?,
+        includeVMState: Bool = true
     ) async throws -> String {
         var form = ["snapname": name]
         if let description, !description.isEmpty {
             form["description"] = description
         }
         if type == .qemu {
-            form["vmstate"] = "1"
+            form["vmstate"] = includeVMState ? "1" : "0"
         }
         return try await post(
             "/nodes/\(node)/\(type.apiPath)/\(vmid)/snapshot",
@@ -262,18 +340,139 @@ actor ProxmoxAPIService {
         return try await post(path)
     }
 
+    // MARK: Permissions
+
+    func fetchPermissions() async throws -> ProxmoxPermissions {
+        try await get("/access/permissions", as: ProxmoxPermissions.self)
+    }
+
+    // MARK: Storage
+
+    func fetchStorages(node: String) async throws -> [ProxmoxStorage] {
+        try await get("/nodes/\(node)/storage", as: [ProxmoxStorage].self)
+    }
+
+    func fetchStorageStatus(node: String, storage: String) async throws -> ProxmoxStorageStatus {
+        try await get("/nodes/\(node)/storage/\(storage.pathEscaped)/status", as: ProxmoxStorageStatus.self)
+    }
+
+    func fetchStorageContent(node: String, storage: String) async throws -> [ProxmoxStorageContent] {
+        try await get("/nodes/\(node)/storage/\(storage.pathEscaped)/content", as: [ProxmoxStorageContent].self)
+    }
+
+    // MARK: Backups
+
+    func fetchBackups(node: String) async throws -> [ProxmoxBackup] {
+        try await get("/nodes/\(node)/backup", as: [ProxmoxBackup].self)
+    }
+
+    func fetchBackupLog(node: String, id: String) async throws -> [ProxmoxTaskLogEntry] {
+        try await get("/nodes/\(node)/backup/\(id.pathEscaped)/log", as: [ProxmoxTaskLogEntry].self)
+    }
+
+    @discardableResult
+    func runBackup(
+        node: String,
+        vmid: Int,
+        storage: String,
+        mode: String = "snapshot"
+    ) async throws -> String {
+        var form: [String: String] = [
+            "vmid": "\(vmid)",
+            "storage": storage,
+            "mode": mode,
+        ]
+        return try await post("/nodes/\(node)/backup", form: form)
+    }
+
+    // MARK: RRD / Historical data
+
+    func fetchRRDData(
+        node: String,
+        timeframe: String = "hour",
+        cf: String = "AVERAGE"
+    ) async throws -> [RRDDataPoint] {
+        try await get(
+            "/nodes/\(node)/rrddata?timeframe=\(timeframe)&cf=\(cf)",
+            as: [RRDDataPoint].self
+        )
+    }
+
+    func fetchGuestRRDData(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        timeframe: String = "hour",
+        cf: String = "AVERAGE"
+    ) async throws -> [RRDDataPoint] {
+        try await get(
+            "/nodes/\(node)/\(type.apiPath)/\(vmid)/rrddata?timeframe=\(timeframe)&cf=\(cf)",
+            as: [RRDDataPoint].self
+        )
+    }
+
     // MARK: - Request plumbing
 
+    /// Performs an authenticated request with transparent ticket renewal on 401.
+    /// For token-based auth, 401 is fatal (no auto-renewal possible).
+    private func performAuthenticatedRequest(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        let (data, response) = try await performRequest(request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw ProxmoxError.network("No HTTP response")
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 {
+                // Clear current auth state
+                ticket = nil
+                csrfToken = nil
+
+                // For ticket auth with stored password, attempt transparent renewal
+                if server.authMethod == .ticket, let password = storedPassword {
+                    NotificationCenter.default.post(
+                        name: .proxmoxAuthenticationExpired,
+                        object: server.id
+                    )
+
+                    // Re-authenticate
+                    try await authenticate(password: password)
+
+                    // Retry the original request with new credentials
+                    var retryRequest = request
+                    applyAuth(to: &retryRequest)
+                    let (retryData, retryResponse) = try await performRequest(retryRequest)
+                    guard let retryHTTP = retryResponse as? HTTPURLResponse,
+                          (200..<300).contains(retryHTTP.statusCode) else {
+                        ticket = nil
+                        csrfToken = nil
+                        throw ProxmoxError.notAuthenticated
+                    }
+                    return (retryData, retryResponse)
+                }
+
+                // No auto-renewal possible
+                NotificationCenter.default.post(
+                    name: .proxmoxAuthenticationExpired,
+                    object: server.id
+                )
+                throw ProxmoxError.notAuthenticated
+            }
+            throw ProxmoxError.requestFailed(status: http.statusCode, body: "")
+        }
+
+        return (data, response)
+    }
+
     private func get<T: Codable>(_ path: String, as type: T.Type) async throws -> T {
-        guard ticket != nil else { throw ProxmoxError.notAuthenticated }
+        guard server.authMethod == .token || ticket != nil else { throw ProxmoxError.notAuthenticated }
         guard let url = URL(string: server.baseURL + path) else { throw ProxmoxError.invalidURL }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         applyAuth(to: &request)
 
-        let (data, response) = try await performRequest(request)
-        try validate(response: response, data: data)
+        let (data, response) = try await performAuthenticatedRequest(request)
 
         do {
             return try JSONDecoder().decode(ProxmoxResponse<T>.self, from: data).data
@@ -286,7 +485,7 @@ actor ProxmoxAPIService {
     /// control actions).
     @discardableResult
     private func post(_ path: String, form: [String: String] = [:]) async throws -> String {
-        guard ticket != nil else { throw ProxmoxError.notAuthenticated }
+        guard server.authMethod == .token || ticket != nil else { throw ProxmoxError.notAuthenticated }
         guard let url = URL(string: server.baseURL + path) else { throw ProxmoxError.invalidURL }
 
         var request = URLRequest(url: url)
@@ -303,8 +502,7 @@ actor ProxmoxAPIService {
                 .data(using: .utf8)
         }
 
-        let (data, response) = try await performRequest(request)
-        try validate(response: response, data: data)
+        let (data, response) = try await performAuthenticatedRequest(request)
 
         // The UPID payload is a bare string; tolerate an empty body too.
         if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String>.self, from: data) {
@@ -315,15 +513,14 @@ actor ProxmoxAPIService {
 
     @discardableResult
     private func delete(_ path: String) async throws -> String {
-        guard ticket != nil else { throw ProxmoxError.notAuthenticated }
+        guard server.authMethod == .token || ticket != nil else { throw ProxmoxError.notAuthenticated }
         guard let url = URL(string: server.baseURL + path) else { throw ProxmoxError.invalidURL }
 
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         applyAuth(to: &request)
 
-        let (data, response) = try await performRequest(request)
-        try validate(response: response, data: data)
+        let (data, response) = try await performAuthenticatedRequest(request)
         if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String>.self, from: data) {
             return decoded.data
         }
@@ -331,29 +528,13 @@ actor ProxmoxAPIService {
     }
 
     private func applyAuth(to request: inout URLRequest) {
-        if let ticket = ticket {
+        if server.authMethod == .token, let tokenValue = tokenValue, !tokenValue.isEmpty {
+            request.setValue("PVEAPIToken=\(server.tokenID)=\(tokenValue)", forHTTPHeaderField: "Authorization")
+        } else if let ticket = ticket {
             request.setValue("PVEAuthCookie=\(ticket)", forHTTPHeaderField: "Cookie")
         }
         if let csrf = csrfToken, request.httpMethod != "GET" {
             request.setValue(csrf, forHTTPHeaderField: "CSRFPreventionToken")
-        }
-    }
-
-    private func validate(response: URLResponse, data: Data) throws {
-        guard let http = response as? HTTPURLResponse else {
-            throw ProxmoxError.network("No HTTP response")
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 401 {
-                ticket = nil
-                csrfToken = nil
-                NotificationCenter.default.post(
-                    name: .proxmoxAuthenticationExpired,
-                    object: server.id
-                )
-                throw ProxmoxError.notAuthenticated
-            }
-            throw ProxmoxError.requestFailed(status: http.statusCode, body: "")
         }
     }
 

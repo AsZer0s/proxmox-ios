@@ -2,6 +2,21 @@ import Foundation
 
 // MARK: - Server Configuration
 
+/// Authentication method for a Proxmox server.
+enum AuthMethod: String, Codable, CaseIterable, Identifiable {
+    case ticket
+    case token
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .ticket: return "Username + Password"
+        case .token: return "API Token"
+        }
+    }
+}
+
 /// A single Proxmox VE server the user has configured.
 struct ProxmoxServer: Identifiable, Codable, Hashable {
     var id: UUID
@@ -11,6 +26,8 @@ struct ProxmoxServer: Identifiable, Codable, Hashable {
     var username: String
     var realm: String
     var allowInsecureSSL: Bool
+    var authMethod: AuthMethod
+    var tokenID: String
 
     init(
         id: UUID = UUID(),
@@ -19,7 +36,9 @@ struct ProxmoxServer: Identifiable, Codable, Hashable {
         port: Int = 8006,
         username: String,
         realm: String = "pam",
-        allowInsecureSSL: Bool = false
+        allowInsecureSSL: Bool = false,
+        authMethod: AuthMethod = .ticket,
+        tokenID: String = ""
     ) {
         self.id = id
         self.name = name
@@ -28,10 +47,12 @@ struct ProxmoxServer: Identifiable, Codable, Hashable {
         self.username = username
         self.realm = realm
         self.allowInsecureSSL = allowInsecureSSL
+        self.authMethod = authMethod
+        self.tokenID = tokenID
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, host, port, username, realm, allowInsecureSSL
+        case id, name, host, port, username, realm, allowInsecureSSL, authMethod, tokenID
     }
 
     init(from decoder: Decoder) throws {
@@ -43,6 +64,8 @@ struct ProxmoxServer: Identifiable, Codable, Hashable {
         username = try container.decode(String.self, forKey: .username)
         realm = try container.decodeIfPresent(String.self, forKey: .realm) ?? "pam"
         allowInsecureSSL = try container.decodeIfPresent(Bool.self, forKey: .allowInsecureSSL) ?? false
+        authMethod = try container.decodeIfPresent(AuthMethod.self, forKey: .authMethod) ?? .ticket
+        tokenID = try container.decodeIfPresent(String.self, forKey: .tokenID) ?? ""
     }
 
     func encode(to encoder: Encoder) throws {
@@ -54,6 +77,8 @@ struct ProxmoxServer: Identifiable, Codable, Hashable {
         try container.encode(username, forKey: .username)
         try container.encode(realm, forKey: .realm)
         try container.encode(allowInsecureSSL, forKey: .allowInsecureSSL)
+        try container.encode(authMethod, forKey: .authMethod)
+        try container.encode(tokenID, forKey: .tokenID)
     }
 
     var baseURL: String {
@@ -75,17 +100,29 @@ struct ProxmoxServer: Identifiable, Codable, Hashable {
 
 // MARK: - Authentication
 
-/// Ticket payload returned by `/access/ticket`.
-struct ProxmoxTicket: Codable {
+/// Ticket payload returned by `/access/ticket` — also covers the TFA challenge case
+/// where `ticket` is empty and `tfa` is present.
+struct ProxmoxTicketPayload: Codable {
     let ticket: String
     let csrfToken: String
     let username: String
+    let tfa: String?
+    let tfaChallenge: String?
 
     enum CodingKeys: String, CodingKey {
         case ticket
         case csrfToken = "CSRFPreventionToken"
         case username
+        case tfa
+        case tfaChallenge = "tfa-challenge"
     }
+}
+
+/// TFA challenge info extracted from the login response.
+struct ProxmoxTFAChallenge: Codable, Sendable {
+    let tfa: String
+    let tfaChallenge: String
+    let username: String
 }
 
 /// Generic Proxmox response envelope. Every endpoint wraps its payload in `data`.
@@ -373,9 +410,108 @@ struct GuestSnapshot: Codable, Hashable, Identifiable {
     var isCurrent: Bool { name == "current" }
 }
 
+// MARK: - Permissions
+
+struct ProxmoxPermissions: Codable, Hashable {
+    let permissions: [String: [String: [String]]]?
+
+    /// Check if the current user has a specific privilege on a path.
+    /// PVE permission format: path -> { user/group -> [privileges] }
+    func hasPrivilege(_ privilege: String, on path: String) -> Bool {
+        guard let permissions else { return false }
+        // Check root-level permissions first
+        if let rootPerms = permissions[""], rootPerms.values.contains(where: { $0.contains(privilege) }) {
+            return true
+        }
+        // Check specific path
+        if let pathPerms = permissions[path], pathPerms.values.contains(where: { $0.contains(privilege) }) {
+            return true
+        }
+        return false
+    }
+}
+
+// MARK: - Storage
+
+struct ProxmoxStorage: Codable, Identifiable, Hashable {
+    let storage: String
+    let type: String
+    let active: Int?
+    let used: Int64?
+    let avail: Int64?
+    let total: Int64?
+    let usedFraction: Double?
+    let content: String?
+
+    var id: String { storage }
+
+    var isAvailable: Bool { active == 1 }
+
+    var storageTypes: [String] {
+        content?.split(separator: ",").map(String.init) ?? []
+    }
+}
+
+struct ProxmoxStorageStatus: Codable, Hashable {
+    let used: Int64?
+    let avail: Int64?
+    let total: Int64?
+    let active: Int?
+}
+
+struct ProxmoxStorageContent: Codable, Identifiable, Hashable {
+    let volid: String
+    let format: String?
+    let size: Int64?
+    let used: Int64?
+    let content: String?
+    let notes: String?
+    let vmid: Int?
+
+    var id: String { volid }
+
+    /// Friendly name extracted from volid (storage:filename).
+    var displayName: String {
+        if let slash = volid.firstIndex(of: "/") {
+            return String(volid[volid.index(after: slash)...])
+        }
+        return volid
+    }
+}
+
+// MARK: - Backups
+
+struct ProxmoxBackup: Codable, Identifiable, Hashable {
+    let id: String
+    let vmid: Int
+    let storage: String
+    let notes: String?
+    let starttime: Int64?
+    let endtime: Int64?
+    let size: Int64?
+    let mode: String?
+    let status: String?
+}
+
+// MARK: - Historical / RRD
+
+struct RRDDataPoint: Codable, Hashable {
+    let time: Int64
+    let value: Double?
+    let cpu: Double?
+    let mem: Double?
+    let maxmem: Double?
+    let netin: Double?
+    let netout: Double?
+    let diskread: Double?
+    let diskwrite: Double?
+    let rootfs: Double?
+    let maxrootfs: Double?
+}
+
 // MARK: - Guest Control Actions
 
-enum GuestAction: String, CaseIterable {
+enum GuestAction: String, CaseIterable, Sendable {
     case start
     case stop
     case shutdown

@@ -55,26 +55,26 @@ final class AppState: ObservableObject {
 
     // MARK: - Server management
 
-    func addServer(_ server: ProxmoxServer, password: String) {
+    func addServer(_ server: ProxmoxServer, secret: String) {
         servers.append(server)
-        if !KeychainHelper.savePassword(password, for: server.id) {
-            lastError = "Could not securely save the server password."
+        if !KeychainHelper.saveSecret(secret, authMethod: server.authMethod, for: server.id) {
+            lastError = "Could not securely save the server credentials."
         }
         ServerStore.save(servers)
     }
 
-    func updateServer(_ server: ProxmoxServer, password: String?) {
+    func updateServer(_ server: ProxmoxServer, secret: String?) {
         guard let index = servers.firstIndex(where: { $0.id == server.id }) else { return }
         servers[index] = server
-        if let password = password, !KeychainHelper.savePassword(password, for: server.id) {
-            lastError = "Could not securely save the server password."
+        if let secret = secret, !KeychainHelper.saveSecret(secret, authMethod: server.authMethod, for: server.id) {
+            lastError = "Could not securely save the server credentials."
         }
         ServerStore.save(servers)
     }
 
     func removeServer(_ server: ProxmoxServer) {
         servers.removeAll { $0.id == server.id }
-        KeychainHelper.deletePassword(for: server.id)
+        KeychainHelper.deleteCredentials(for: server.id)
         ServerStore.save(servers)
         if connectedServer?.id == server.id {
             disconnect()
@@ -83,23 +83,26 @@ final class AppState: ObservableObject {
 
     // MARK: - Connection lifecycle
 
-    /// Connects to a server using its stored Keychain password.
+    /// Connects to a server using its stored credentials (password or token secret).
     func connect(to server: ProxmoxServer) async {
-        guard let password = KeychainHelper.password(for: server.id) else {
-            lastError = "No saved password for \(server.name). Edit the server to re-enter it."
+        let secret = KeychainHelper.secret(authMethod: server.authMethod, for: server.id)
+        guard let secret else {
+            lastError = "No saved credentials for \(server.name). Edit the server to re-enter them."
             return
         }
-        await connect(to: server, password: password)
+        await connect(to: server, secret: secret)
     }
 
-    /// Connects with an explicit password (used right after adding a server).
-    func connect(to server: ProxmoxServer, password: String) async {
+    /// Connects with explicit credentials.
+    func connect(to server: ProxmoxServer, secret: String) async {
         connectionState = .connecting
         lastError = nil
 
-        let service = ProxmoxAPIService(server: server)
+        let service = ProxmoxAPIService(server: server, tokenValue: server.authMethod == .token ? secret : nil)
         do {
-            try await service.authenticate(password: password)
+            if server.authMethod == .ticket {
+                try await service.authenticate(password: secret)
+            }
             self.service = service
             self.connectedServer = server
             self.connectionState = .connected
