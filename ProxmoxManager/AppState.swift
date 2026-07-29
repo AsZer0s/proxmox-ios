@@ -34,6 +34,8 @@ final class AppState: ObservableObject {
     @Published var appLocked = true
     let taskCenter = ProxmoxTaskCenter()
     private var authenticationObserver: NSObjectProtocol?
+    /// Cancels an in-flight connection when a new one is started.
+    private var connectionTask: Task<Void, Never>?
 
     enum ConnectionState: Equatable {
         case disconnected
@@ -94,8 +96,10 @@ final class AppState: ObservableObject {
     }
 
     /// Check if the current user has a specific PVE privilege on a path.
+    /// Returns `true` when permissions are unknown (nil) so that restricted
+    /// accounts without ACL read access aren't incorrectly blocked.
     func hasPrivilege(_ privilege: String, for vmid: Int? = nil) -> Bool {
-        guard let permissions else { return false }
+        guard let permissions else { return true }
         let vmPath = vmid.map { "/vms/\($0)" } ?? ""
         if !vmPath.isEmpty, permissions.hasPrivilege(privilege, on: vmPath) { return true }
         return permissions.hasPrivilege(privilege, on: "")
@@ -143,49 +147,59 @@ final class AppState: ObservableObject {
 
     /// Connects with explicit credentials.
     func connect(to server: ProxmoxServer, secret: String) async {
+        // Cancel any in-flight connection attempt
+        connectionTask?.cancel()
+        connectionTask = nil
+
         connectionState = .connecting
         lastError = nil
         pendingTFAChallenge = nil
 
-        let service = ProxmoxAPIService(server: server, tokenValue: server.authMethod == .token ? secret : nil)
-        do {
-            if server.authMethod == .ticket {
-                try await service.authenticate(password: secret)
-            }
-            self.service = service
-            self.connectedServer = server
-            self.connectionState = .connected
-            // Load permissions after successful connection
-            if let permissions = try? await service.fetchPermissions() {
-                self.permissions = permissions
-            }
-        } catch let error as ProxmoxError {
-            self.connectionState = .disconnected
-            switch error {
-            case .certificateConfirmationRequired(_, let fingerprint):
-                self.pendingCertificateConfirmation = CertificateConfirmation(
-                    server: server,
-                    fingerprint: fingerprint
-                )
-                self.lastError = nil
-            case .tfaRequired:
-                // Re-init service and authenticate with TOTP
-                let newService = ProxmoxAPIService(server: server)
-                try? await newService.authenticate(password: secret)
-                // The challenge is captured in the service actor
-                self.service = newService
+        let task = Task { @MainActor in
+            defer { connectionTask = nil }
+            let service = ProxmoxAPIService(server: server, tokenValue: server.authMethod == .token ? secret : nil)
+            do {
+                if server.authMethod == .ticket {
+                    try await service.authenticate(password: secret)
+                }
+                try Task.checkCancellation()
+                self.service = service
                 self.connectedServer = server
-                self.pendingTFAChallenge = TFAChallengeState(
-                    serverID: server.id,
-                    challenge: ProxmoxTFAChallenge(tfa: "", tfaChallenge: "", username: server.fullUsername)
-                )
-            default:
+                self.connectionState = .connected
+                // Load permissions after successful connection
+                if let permissions = try? await service.fetchPermissions() {
+                    self.permissions = permissions
+                }
+            } catch let error as ProxmoxError {
+                guard !Task.isCancelled else { return }
+                self.connectionState = .disconnected
+                switch error {
+                case .certificateConfirmationRequired(_, let fingerprint):
+                    self.pendingCertificateConfirmation = CertificateConfirmation(
+                        server: server,
+                        fingerprint: fingerprint
+                    )
+                    self.lastError = nil
+                case .tfaRequired:
+                    let newService = ProxmoxAPIService(server: server)
+                    try? await newService.authenticate(password: secret)
+                    self.service = newService
+                    self.connectedServer = server
+                    self.pendingTFAChallenge = TFAChallengeState(
+                        serverID: server.id,
+                        challenge: ProxmoxTFAChallenge(tfa: "", tfaChallenge: "", username: server.fullUsername)
+                    )
+                default:
+                    self.lastError = error.localizedDescription
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.connectionState = .disconnected
                 self.lastError = error.localizedDescription
             }
-        } catch {
-            self.connectionState = .disconnected
-            self.lastError = error.localizedDescription
         }
+        connectionTask = task
+        _ = await task.value
     }
 
     /// Complete a TOTP challenge during login.

@@ -59,31 +59,26 @@ struct ErrorStateView: View {
     }
 }
 
-/// Empty-state placeholder. Wraps `ContentUnavailableView` on iOS 17+ and
-/// falls back to a hand-rolled layout on iOS 15/16.
+/// Empty-state placeholder using a hand-rolled layout for iOS 16 compatibility.
 struct ContentUnavailableCompat: View {
     let title: String
     let systemImage: String
     let description: String
 
     var body: some View {
-        if #available(iOS 17.0, *) {
-            ContentUnavailableView(title, systemImage: systemImage, description: Text(description))
-        } else {
-            VStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 48))
-                    .foregroundStyle(.secondary)
-                Text(title)
-                    .font(.headline)
-                Text(description)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(32)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.headline)
+            Text(description)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

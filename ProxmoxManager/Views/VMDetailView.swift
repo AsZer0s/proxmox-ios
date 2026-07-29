@@ -225,12 +225,14 @@ struct VMDetailView: View {
             HStack {
                 Text("Snapshots")
                 Spacer()
-                Button {
-                    showingCreateSnapshot = true
-                } label: {
-                    Image(systemName: "plus")
+                if appState.hasPrivilege("VM.Snapshot", for: guest.vmid) {
+                    Button {
+                        showingCreateSnapshot = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Create snapshot")
                 }
-                .accessibilityLabel("Create snapshot")
             }
         }
     }
@@ -330,21 +332,23 @@ struct VMDetailView: View {
 
     @ViewBuilder
     private var actionSection: some View {
-        Section("Actions") {
-            HStack(spacing: 12) {
-                ActionButton(action: .start, isBusy: model.isPerformingAction, isEnabled: !isRunning) {
-                    pendingAction = .start
+        if appState.hasPrivilege("VM.PowerMgmt", for: guest.vmid) {
+            Section("Actions") {
+                HStack(spacing: 12) {
+                    ActionButton(action: .start, isBusy: model.isPerformingAction, isEnabled: !isRunning) {
+                        pendingAction = .start
+                    }
+                    ActionButton(action: .reboot, isBusy: model.isPerformingAction, isEnabled: isRunning) {
+                        pendingAction = .reboot
+                    }
                 }
-                ActionButton(action: .reboot, isBusy: model.isPerformingAction, isEnabled: isRunning) {
-                    pendingAction = .reboot
-                }
-            }
-            HStack(spacing: 12) {
-                ActionButton(action: .shutdown, isBusy: model.isPerformingAction, isEnabled: isRunning) {
-                    pendingAction = .shutdown
-                }
-                ActionButton(action: .stop, isBusy: model.isPerformingAction, isEnabled: isRunning) {
-                    pendingAction = .stop
+                HStack(spacing: 12) {
+                    ActionButton(action: .shutdown, isBusy: model.isPerformingAction, isEnabled: isRunning) {
+                        pendingAction = .shutdown
+                    }
+                    ActionButton(action: .stop, isBusy: model.isPerformingAction, isEnabled: isRunning) {
+                        pendingAction = .stop
+                    }
                 }
             }
         }

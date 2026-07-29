@@ -211,6 +211,13 @@ struct ServerSetupView: View {
             }
             appState.updateServer(server, secret: secret)
             dismiss()
+            // Reconnect if the edited server is currently connected
+            if appState.connectedServer?.id == server.id {
+                appState.disconnect()
+                if let secret = secret ?? KeychainHelper.secret(authMethod: server.authMethod, for: server.id) {
+                    Task { await appState.connect(to: server, secret: secret) }
+                }
+            }
         }
     }
 }

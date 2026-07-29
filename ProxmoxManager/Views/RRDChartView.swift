@@ -42,7 +42,7 @@ struct RRDChartView: View {
                     Text(metricDisplayName(m)).tag(m)
                 }
             }
-            .pickerStyle(.palette)
+            .pickerStyle(.segmented)
             .padding(.horizontal)
 
             // Chart area

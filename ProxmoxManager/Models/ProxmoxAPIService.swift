@@ -430,11 +430,6 @@ actor ProxmoxAPIService {
 
                 // For ticket auth with stored password, attempt transparent renewal
                 if server.authMethod == .ticket, let password = storedPassword {
-                    NotificationCenter.default.post(
-                        name: .proxmoxAuthenticationExpired,
-                        object: server.id
-                    )
-
                     // Re-authenticate
                     try await authenticate(password: password)
 
@@ -446,6 +441,10 @@ actor ProxmoxAPIService {
                           (200..<300).contains(retryHTTP.statusCode) else {
                         ticket = nil
                         csrfToken = nil
+                        NotificationCenter.default.post(
+                            name: .proxmoxAuthenticationExpired,
+                            object: server.id
+                        )
                         throw ProxmoxError.notAuthenticated
                     }
                     return (retryData, retryResponse)

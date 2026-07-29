@@ -163,8 +163,8 @@ struct StorageDetailView: View {
         isLoading = true
         async let contentTask = service.fetchStorageContent(node: node, storage: storage.storage)
         async let statusTask = service.fetchStorageStatus(node: node, storage: storage.storage)
-        (content, status) = (try? await contentTask) ?? []
-        _ = try? await statusTask
+        content = (try? await contentTask) ?? []
+        status = try? await statusTask
         isLoading = false
     }
 }
