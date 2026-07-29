@@ -105,6 +105,7 @@ struct NodeDetailView: View {
         } header: {
             Text("Resources")
         }
+    }
 
     @ViewBuilder
     private var nodeActionsSection: some View {
