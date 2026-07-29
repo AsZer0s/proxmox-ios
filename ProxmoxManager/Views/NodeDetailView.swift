@@ -70,7 +70,7 @@ struct NodeDetailView: View {
         Section {
             // CPU: normalize against maxcpu — API returns raw cpuload, not 0-1 fraction
             let rawCPU = model.status?.cpu ?? node.cpu
-            let maxCPU = Double(model.status?.cpus ?? node.maxcpu ?? 8)
+            let maxCPU = Double(node.maxcpu ?? 8)
             let cpuFraction = rawCPU.map { maxCPU > 0 ? min($0 / maxCPU, 1.0) : 0 } ?? 0
 
             let memoryUsed = model.status?.memory?.used ?? node.mem
