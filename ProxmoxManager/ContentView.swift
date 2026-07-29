@@ -124,7 +124,7 @@ struct ServerListView: View {
                     secondaryButton: .cancel()
                 )
             }
-            .onChange(of: appState.pendingTFAChallenge?.id) { _, _ in
+            .onChange(of: appState.pendingTFAChallenge?.id) { _ in
                 if appState.pendingTFAChallenge != nil {
                     showingTOTP = true
                 }
