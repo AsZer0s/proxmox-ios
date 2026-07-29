@@ -24,7 +24,11 @@ struct NodesView: View {
                     )
                 } else {
                     List(model.nodes) { node in
-                        NodeRow(node: node)
+                        NavigationLink {
+                            NodeDetailView(node: node)
+                        } label: {
+                            NodeRow(node: node)
+                        }
                     }
                     .listStyle(.insetGrouped)
                 }

@@ -8,6 +8,8 @@ enum ProxmoxError: LocalizedError {
     case authenticationFailed(String)
     case requestFailed(status: Int, body: String)
     case decodingFailed(String)
+    case taskFailed(String)
+    case taskTimeout
     case network(String)
 
     var errorDescription: String? {
@@ -22,6 +24,10 @@ enum ProxmoxError: LocalizedError {
             return "Request failed (HTTP \(status)): \(body)"
         case .decodingFailed(let msg):
             return "Could not read the server response: \(msg)"
+        case .taskFailed(let msg):
+            return "Proxmox task failed: \(msg)"
+        case .taskTimeout:
+            return "The Proxmox task timed out. Check the task log on the server."
         case .network(let msg):
             return "Network error: \(msg)"
         }
@@ -144,6 +150,87 @@ actor ProxmoxAPIService {
         try await get("/nodes/\(node)/\(type.apiPath)/\(vmid)/status/current", as: VMStatus.self)
     }
 
+    func fetchGuestConfig(node: String, type: GuestType, vmid: Int) async throws -> GuestConfig {
+        try await get("/nodes/\(node)/\(type.apiPath)/\(vmid)/config", as: GuestConfig.self)
+    }
+
+    func fetchSnapshots(node: String, type: GuestType, vmid: Int) async throws -> [GuestSnapshot] {
+        try await get("/nodes/\(node)/\(type.apiPath)/\(vmid)/snapshot", as: [GuestSnapshot].self)
+            .filter { !$0.isCurrent }
+            .sorted { ($0.snaptime ?? 0) > ($1.snaptime ?? 0) }
+    }
+
+    @discardableResult
+    func createSnapshot(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        name: String,
+        description: String?
+    ) async throws -> String {
+        var form = ["snapname": name]
+        if let description, !description.isEmpty {
+            form["description"] = description
+        }
+        if type == .qemu {
+            form["vmstate"] = "1"
+        }
+        return try await post(
+            "/nodes/\(node)/\(type.apiPath)/\(vmid)/snapshot",
+            form: form
+        )
+    }
+
+    @discardableResult
+    func rollbackSnapshot(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        snapshot: String
+    ) async throws -> String {
+        try await post(
+            "/nodes/\(node)/\(type.apiPath)/\(vmid)/snapshot/\(snapshot.pathEscaped)/rollback",
+            form: [:]
+        )
+    }
+
+    @discardableResult
+    func deleteSnapshot(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        snapshot: String
+    ) async throws -> String {
+        try await delete("/nodes/\(node)/\(type.apiPath)/\(vmid)/snapshot/\(snapshot.pathEscaped)")
+    }
+
+    func fetchTaskStatus(node: String, upid: String) async throws -> ProxmoxTaskStatus {
+        let encodedUPID = upid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? upid
+        return try await get("/nodes/\(node)/tasks/\(encodedUPID)/status", as: ProxmoxTaskStatus.self)
+    }
+
+    func waitForTask(
+        node: String,
+        upid: String,
+        pollIntervalNanoseconds: UInt64 = 1_000_000_000,
+        maxPolls: Int = 120
+    ) async throws -> ProxmoxTaskStatus {
+        for poll in 0...maxPolls {
+            try Task.checkCancellation()
+            let status = try await fetchTaskStatus(node: node, upid: upid)
+            if status.isFinished {
+                guard status.isSuccessful else {
+                    throw ProxmoxError.taskFailed(status.exitstatus ?? "Unknown error")
+                }
+                return status
+            }
+            if poll < maxPolls {
+                try await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+            }
+        }
+        throw ProxmoxError.taskTimeout
+    }
+
     // MARK: Control
 
     /// Sends a start/stop/shutdown/reboot to a guest. Returns the UPID task id.
@@ -176,18 +263,45 @@ actor ProxmoxAPIService {
     /// POST that returns the raw `data` string (Proxmox returns a UPID for
     /// control actions).
     @discardableResult
-    private func post(_ path: String) async throws -> String {
+    private func post(_ path: String, form: [String: String] = [:]) async throws -> String {
         guard ticket != nil else { throw ProxmoxError.notAuthenticated }
         guard let url = URL(string: server.baseURL + path) else { throw ProxmoxError.invalidURL }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyAuth(to: &request)
+        if !form.isEmpty {
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.httpBody = form.keys.sorted()
+                .compactMap { key in
+                    guard let value = form[key] else { return nil }
+                    return "\(key.formURLEncoded)=\(value.formURLEncoded)"
+                }
+                .joined(separator: "&")
+                .data(using: .utf8)
+        }
 
         let (data, response) = try await performRequest(request)
         try validate(response: response, data: data)
 
         // The UPID payload is a bare string; tolerate an empty body too.
+        if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String>.self, from: data) {
+            return decoded.data
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    @discardableResult
+    private func delete(_ path: String) async throws -> String {
+        guard ticket != nil else { throw ProxmoxError.notAuthenticated }
+        guard let url = URL(string: server.baseURL + path) else { throw ProxmoxError.invalidURL }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        applyAuth(to: &request)
+
+        let (data, response) = try await performRequest(request)
+        try validate(response: response, data: data)
         if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String>.self, from: data) {
             return decoded.data
         }

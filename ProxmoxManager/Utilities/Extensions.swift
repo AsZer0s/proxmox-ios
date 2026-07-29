@@ -17,6 +17,10 @@ extension String {
     var trimmed: String {
         trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    var pathEscaped: String {
+        addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? self
+    }
 }
 
 // MARK: - Byte / percent / duration formatting

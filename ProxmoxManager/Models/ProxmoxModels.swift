@@ -129,6 +129,24 @@ struct NodeStatus: Codable, Hashable {
     }
 }
 
+struct ProxmoxTaskStatus: Codable, Hashable {
+    let status: String?
+    let exitstatus: String?
+    let type: String?
+    let node: String?
+    let pid: Int?
+    let starttime: Int64?
+    let endtime: Int64?
+
+    var isFinished: Bool {
+        status?.lowercased() != "running" || endtime != nil
+    }
+
+    var isSuccessful: Bool {
+        exitstatus?.uppercased() == "OK"
+    }
+}
+
 // MARK: - Virtual Machines / Containers
 
 /// A guest (QEMU VM or LXC container). Used for `/nodes/{node}/qemu` and
@@ -184,6 +202,116 @@ struct VMStatus: Codable, Hashable {
     let name: String?
 
     var isRunning: Bool { status.lowercased() == "running" }
+}
+
+struct GuestConfig: Codable, Hashable {
+    let name: String?
+    let hostname: String?
+    let description: String?
+    let tags: String?
+    let cores: Int?
+    let sockets: Int?
+    let vcpus: Int?
+    let memory: Int64?
+    let swap: Int64?
+    let onboot: Int?
+    let boot: String?
+    let ostype: String?
+    let agent: String?
+    let unprivileged: Int?
+    let rootfs: String?
+    let scsi0: String?
+    let virtio0: String?
+    let sata0: String?
+    let ide0: String?
+    let net0: String?
+    let net1: String?
+    let mp0: String?
+    let mp1: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, hostname, description, tags, cores, sockets, vcpus, memory, swap
+        case onboot, boot, ostype, agent, unprivileged, rootfs
+        case scsi0, virtio0, sata0, ide0, net0, net1, mp0, mp1
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        hostname = try container.decodeIfPresent(String.self, forKey: .hostname)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        tags = try container.decodeIfPresent(String.self, forKey: .tags)
+        cores = try Self.decodeInt(container, key: .cores)
+        sockets = try Self.decodeInt(container, key: .sockets)
+        vcpus = try Self.decodeInt(container, key: .vcpus)
+        memory = try Self.decodeInt64(container, key: .memory)
+        swap = try Self.decodeInt64(container, key: .swap)
+        onboot = try Self.decodeInt(container, key: .onboot)
+        boot = try container.decodeIfPresent(String.self, forKey: .boot)
+        ostype = try container.decodeIfPresent(String.self, forKey: .ostype)
+        agent = try Self.decodeString(container, key: .agent)
+        unprivileged = try Self.decodeInt(container, key: .unprivileged)
+        rootfs = try container.decodeIfPresent(String.self, forKey: .rootfs)
+        scsi0 = try container.decodeIfPresent(String.self, forKey: .scsi0)
+        virtio0 = try container.decodeIfPresent(String.self, forKey: .virtio0)
+        sata0 = try container.decodeIfPresent(String.self, forKey: .sata0)
+        ide0 = try container.decodeIfPresent(String.self, forKey: .ide0)
+        net0 = try container.decodeIfPresent(String.self, forKey: .net0)
+        net1 = try container.decodeIfPresent(String.self, forKey: .net1)
+        mp0 = try container.decodeIfPresent(String.self, forKey: .mp0)
+        mp1 = try container.decodeIfPresent(String.self, forKey: .mp1)
+    }
+
+    private static func decodeString(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        key: CodingKeys
+    ) throws -> String? {
+        if let value = try? container.decode(String.self, forKey: key) {
+            return value
+        }
+        if let value = try? container.decode(Int.self, forKey: key) {
+            return String(value)
+        }
+        return nil
+    }
+
+    private static func decodeInt(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        key: CodingKeys
+    ) throws -> Int? {
+        if let value = try? container.decode(Int.self, forKey: key) {
+            return value
+        }
+        if let value = try? container.decode(String.self, forKey: key) {
+            return Int(value)
+        }
+        return nil
+    }
+
+    private static func decodeInt64(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        key: CodingKeys
+    ) throws -> Int64? {
+        if let value = try? container.decode(Int64.self, forKey: key) {
+            return value
+        }
+        if let value = try? container.decode(String.self, forKey: key) {
+            return Int64(value)
+        }
+        return nil
+    }
+}
+
+struct GuestSnapshot: Codable, Hashable, Identifiable {
+    let name: String
+    let description: String?
+    let snaptime: Int64?
+    let parent: String?
+    let vmstate: Int?
+
+    var id: String { name }
+
+    var isCurrent: Bool { name == "current" }
 }
 
 // MARK: - Guest Control Actions
