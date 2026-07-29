@@ -1,7 +1,135 @@
 import SwiftUI
 
-/// Historical CPU / memory / disk / network charts from RRD data.
-/// Uses a native SwiftUI Canvas-based line chart with gradient fill.
+// MARK: - Line Chart View
+
+/// Reusable line chart component with smooth curves, gradient fill, and
+/// axis labels. Renders on a card with rounded corners and shadow.
+struct LineChart: View {
+    let values: [Double]
+    let timeLabels: [String]
+    let yLabel: (Double) -> String
+    let accentColor: Color
+
+    private let gridLines = 4
+
+    var body: some View {
+        let maxVal = values.max() ?? 1
+        let minVal: Double = 0
+        let range = max(maxVal - minVal, 0.001)
+
+        VStack(alignment: .leading, spacing: 10) {
+            // Chart
+            GeometryReader { geo in
+                let w = geo.size.width
+                let h = geo.size.height
+
+                ZStack(alignment: .topLeading) {
+                    // Horizontal grid + Y labels
+                    ForEach(0...gridLines, id: \.self) { i in
+                        let y = h * Double(i) / Double(gridLines)
+                        let val = maxVal * (1.0 - Double(i) / Double(gridLines))
+
+                        Path { p in
+                            p.move(to: CGPoint(x: 0, y: y))
+                            p.addLine(to: CGPoint(x: w, y: y))
+                        }
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+
+                        Text(yLabel(val))
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .position(x: w - 5, y: y)
+                    }
+
+                    // Line + fill
+                    if values.count >= 2 {
+                        let stepX = w / Double(values.count - 1)
+
+                        // Fill
+                        Path { p in
+                            p.move(to: CGPoint(x: 0, y: h))
+                            for (i, v) in values.enumerated() {
+                                let px = Double(i) * stepX
+                                let py = h - ((v - minVal) / range) * h
+                                p.addLine(to: CGPoint(x: px, y: py))
+                            }
+                            p.addLine(to: CGPoint(x: Double(values.count - 1) * stepX, y: h))
+                            p.closeSubpath()
+                        }
+                        .fill(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: accentColor.opacity(0.35), location: 0),
+                                    .init(color: accentColor.opacity(0.05), location: 1),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                        // Stroke
+                        Path { p in
+                            p.move(to: firstPoint(values, stepX, h, range, minVal))
+                            for (i, v) in values.enumerated().dropFirst() {
+                                let px = Double(i) * stepX
+                                let py = h - ((v - minVal) / range) * h
+                                p.addLine(to: CGPoint(x: px, y: py))
+                            }
+                        }
+                        .stroke(accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    }
+                }
+            }
+            .frame(height: 200)
+
+            // Time axis
+            if let first = timeLabels.first, let last = timeLabels.last {
+                HStack {
+                    Text(first)
+                    Spacer()
+                    Text(last)
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func firstPoint(_ vals: [Double], _ step: Double, _ h: Double, _ range: Double, _ minVal: Double) -> CGPoint {
+        let py = h - ((vals[0] - minVal) / range) * h
+        return CGPoint(x: 0, y: py)
+    }
+}
+
+// MARK: - Stat Card
+
+/// Small card with label, value, and optional trend indicator.
+struct StatCard: View {
+    let label: String
+    let value: String
+    let accent: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                .foregroundStyle(accent)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(accent.opacity(0.08))
+        )
+    }
+}
+
+// MARK: - RRD Chart View
+
+/// Historical CPU / memory / disk / network charts from PVE RRD data.
 struct RRDChartView: View {
     @EnvironmentObject private var appState: AppState
     @State private var dataPoints: [RRDDataPoint] = []
@@ -16,164 +144,179 @@ struct RRDChartView: View {
     private let timeframes = ["hour", "day", "week"]
     private let metrics = ["cpu", "memory", "network", "disk"]
 
-    private var metricLabel: String {
-        switch selectedMetric {
-        case "cpu": return "CPU"
-        case "memory": return "Memory"
-        case "network": return "Network I/O"
-        case "disk": return "Disk I/O"
-        default: return selectedMetric
+    private var chartColor: Color {
+        if let guest {
+            return guest.type == .qemu ? .purple : .teal
         }
+        return .blue
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Timeframe picker
-            Picker("Timeframe", selection: $selectedTimeframe) {
-                ForEach(timeframes, id: \.self) { tf in
-                    Text(tf.capitalized).tag(tf)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding()
-
-            // Metric picker
-            Picker("Metric", selection: $selectedMetric) {
-                ForEach(metrics, id: \.self) { m in
-                    Text(metricDisplayName(m)).tag(m)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-
-            // Chart area
-            Group {
-                if isLoading && dataPoints.isEmpty {
-                    ProgressView("Loading data…")
-                        .frame(maxHeight: .infinity)
-                } else if let error, dataPoints.isEmpty {
-                    ErrorStateView(message: error) {
-                        Task { await load() }
+        ScrollView {
+            VStack(spacing: 16) {
+                // Timeframe picker
+                Picker("Timeframe", selection: $selectedTimeframe) {
+                    ForEach(timeframes, id: \.self) { tf in
+                        Text(timeframeLabel(tf)).tag(tf)
                     }
-                } else if dataPoints.isEmpty {
-                    ContentUnavailableCompat(
-                        title: "No Data",
-                        systemImage: "chart.xyaxis.line",
-                        description: "No RRD data available for this timeframe."
-                    )
-                } else {
-                    chartContent
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+
+                // Metric picker
+                Picker("Metric", selection: $selectedMetric) {
+                    ForEach(metrics, id: \.self) { m in
+                        Label(metricIcon(m), systemImage: "").tag(m)
+                        Text(metricDisplayName(m)).tag(m)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+
+                // Content
+                Group {
+                    if isLoading && dataPoints.isEmpty {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Loading data…")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 260)
+                    } else if let error, dataPoints.isEmpty {
+                        ErrorStateView(message: error) {
+                            Task { await load() }
+                        }
+                    } else if dataPoints.isEmpty {
+                        ContentUnavailableCompat(
+                            title: "No Data",
+                            systemImage: "chart.xyaxis.line",
+                            description: "No RRD data available for this timeframe."
+                        )
+                    } else {
+                        chartSection
+                        statsGrid
+                    }
+                }
+
+                // Refresh info
+                if !dataPoints.isEmpty {
+                    HStack {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                        Text("\(dataPoints.count) data points")
+                            .font(.caption)
+                        Spacer()
+                        Text(selectedTimeframe == "hour" ? "Past hour" : selectedTimeframe == "day" ? "Past day" : "Past week")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.vertical)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .navigationTitle(metricLabel)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let guest {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 4) {
+                        Image(systemName: guest.type == .qemu ? "desktopcomputer" : "square.grid.2x2")
+                            .font(.caption)
+                            Text("VM \(guest.vmid)")
+                                .font(.caption.weight(.medium))
+                    }
+                    .foregroundStyle(.secondary)
                 }
             }
         }
-        .navigationTitle(metricLabel)
-        .navigationBarTitleDisplayMode(.inline)
         .task(id: selectedTimeframe) { await load() }
+        .refreshable { await load() }
+    }
+
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var chartSection: some View {
+        let values = chartValues()
+
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(metricLabel)
+                    .font(.headline)
+                Spacer()
+                HStack(spacing: 2) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 6))
+                    Text(metricUnit)
+                }
+                .font(.caption2)
+                .foregroundStyle(chartColor)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+
+            LineChart(
+                values: values,
+                timeLabels: timeAxisLabels(),
+                yLabel: { formattedGridValue($0) },
+                accentColor: chartColor
+            )
+            .padding(12)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(uiColor: .systemBackground))
+        )
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
+        .padding(.horizontal)
     }
 
     @ViewBuilder
-    private var chartContent: some View {
+    private var statsGrid: some View {
         let values = chartValues()
-        let maxValue = values.max() ?? 1
-        let minValue: Double = 0
 
-        VStack(spacing: 8) {
-            // Line chart canvas
-            GeometryReader { geometry in
-                let width = geometry.size.width
-                let height = geometry.size.height - 20
-                let chartWidth = width - 16  // padding
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            StatCard(
+                label: String(localized: "Average"),
+                value: formattedValue(chartAverage(values)),
+                accent: chartColor
+            )
+            StatCard(
+                label: String(localized: "Maximum"),
+                value: formattedValue(values.max() ?? 0),
+                accent: .orange
+            )
+            StatCard(
+                label: String(localized: "Current"),
+                value: formattedValue(values.last ?? 0),
+                accent: .green
+            )
+        }
+        .padding(.horizontal)
+    }
 
-                ZStack(alignment: .topLeading) {
-                    // Grid lines
-                    ForEach(0..<5, id: \.self) { i in
-                        let y = height * Double(i) / 4
-                        Path { path in
-                            path.move(to: CGPoint(x: 0, y: y))
-                            path.addLine(to: CGPoint(x: width, y: y))
-                        }
-                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+    // MARK: - Data
 
-                        Text(formattedGridValue(maxValue * (1 - Double(i) / 4)))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .position(x: width - 30, y: y)
-                    }
+    private var metricUnit: String {
+        switch selectedMetric {
+        case "cpu": return "%"
+        case "memory": return "bytes"
+        case "network": return "bytes/s"
+        case "disk": return "bytes/s"
+        default: return ""
+        }
+    }
 
-                    // Line path
-                    if values.count > 1 {
-                        let stepX = chartWidth / Double(values.count - 1)
-                        let range = max(maxValue - minValue, 0.001)
-
-                        // Gradient fill
-                        Path { path in
-                            path.move(to: CGPoint(x: 0, y: height))
-                            for (i, val) in values.enumerated() {
-                                let x = Double(i) * stepX
-                                let y = height - (val - minValue) / range * height
-                                path.addLine(to: CGPoint(x: x, y: y))
-                            }
-                            path.addLine(to: CGPoint(x: Double(values.count - 1) * stepX, y: height))
-                            path.closeSubpath()
-                        }
-                        .fill(
-                            LinearGradient(
-                                colors: [chartColor(0.5).opacity(0.3), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-
-                        // Line stroke
-                        Path { path in
-                            path.move(to: CGPoint(x: 0, y: height - (values[0] - minValue) / range * height))
-                            for (i, val) in values.enumerated() {
-                                let x = Double(i) * stepX
-                                let y = height - (val - minValue) / range * height
-                                path.addLine(to: CGPoint(x: x, y: y))
-                            }
-                        }
-                        .stroke(chartColor(0.5), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                    }
-
-                    // Time labels
-                    HStack {
-                        if let first = dataPoints.first {
-                            Text(formattedTime(for: 0))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if dataPoints.count > 1 {
-                            Text(formattedTime(for: dataPoints.count - 1))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.top, height + 4)
-                }
-                .padding(.horizontal, 8)
-            }
-            .frame(height: 220)
-
-            // Legend / stats
-            HStack(spacing: 16) {
-                Label(
-                    "Avg: \(formattedValue(chartAverage(values)))",
-                    systemImage: "circle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(chartColor(0.5))
-
-                Label(
-                    "Max: \(formattedValue(maxValue))",
-                    systemImage: "circle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
-            .padding(.horizontal)
-            .padding(.bottom)
+    private var metricLabel: String {
+        switch selectedMetric {
+        case "cpu": return String(localized: "CPU Usage")
+        case "memory": return String(localized: "Memory Usage")
+        case "network": return String(localized: "Network I/O")
+        case "disk": return String(localized: "Disk I/O")
+        default: return selectedMetric
         }
     }
 
@@ -201,8 +344,10 @@ struct RRDChartView: View {
     private func chartValues() -> [Double] {
         dataPoints.map { dp in
             switch selectedMetric {
-            case "cpu": return dp.cpu ?? 0
-            case "memory": return dp.mem ?? 0  // absolute byte value
+            case "cpu": return (dp.cpu ?? 0) * 100  // fraction → percent
+            case "memory":
+                let total = dp.maxmem ?? 1
+                return total > 0 ? (dp.mem ?? 0) / total * 100 : 0  // percentage
             case "network": return (dp.netin ?? 0) + (dp.netout ?? 0)
             case "disk": return (dp.diskread ?? 0) + (dp.diskwrite ?? 0)
             default: return dp.value ?? 0
@@ -217,14 +362,9 @@ struct RRDChartView: View {
 
     private func formattedValue(_ val: Double) -> String {
         switch selectedMetric {
-        case "cpu":
-            // RRD cpu for node is fraction 0-1, for guest is fraction 0-1
-            return String(format: "%.1f%%", val * 100)
-        case "memory":
-            return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .memory)
-        case "network":
-            return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
-        case "disk":
+        case "cpu", "memory":
+            return String(format: "%.1f%%", val)
+        case "network", "disk":
             return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
         default:
             return String(format: "%.1f", val)
@@ -233,35 +373,63 @@ struct RRDChartView: View {
 
     private func formattedGridValue(_ val: Double) -> String {
         switch selectedMetric {
-        case "cpu":
-            return String(format: "%.0f%%", val * 100)
-        case "memory", "network", "disk":
+        case "cpu", "memory":
+            return String(format: "%.0f%%", val)
+        case "network", "disk":
             return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
         default:
-            return String(format: "%.1f", val)
+            return String(format: "%.0f", val)
         }
     }
 
-    private func formattedTime(for index: Int) -> String {
-        guard index < dataPoints.count else { return "" }
-        let time = dataPoints[index].time
-        let date = Date(timeIntervalSince1970: Double(time))
+    private func timeAxisLabels() -> [String] {
+        guard !dataPoints.isEmpty else { return [] }
         let formatter = DateFormatter()
         formatter.dateFormat = selectedTimeframe == "hour" ? "HH:mm" : "MM/dd HH:mm"
-        return formatter.string(from: date)
-    }
 
-    private func chartColor(_ fraction: Double) -> Color {
-        fraction > 0.8 ? .red : fraction > 0.5 ? .orange : .blue
+        // Show ~5 labels evenly spaced
+        let step = max(1, dataPoints.count / 5)
+        var labels: [String] = []
+        for i in stride(from: 0, to: dataPoints.count, by: step) {
+            let t = dataPoints[i].time
+            labels.append(formatter.string(from: Date(timeIntervalSince1970: Double(t))))
+        }
+        // Always include last
+        if let last = dataPoints.last {
+            let lastLabel = formatter.string(from: Date(timeIntervalSince1970: Double(last.time)))
+            if labels.last != lastLabel {
+                labels.append(lastLabel)
+            }
+        }
+        return labels
     }
 
     private func metricDisplayName(_ m: String) -> String {
         switch m {
-        case "cpu": return "CPU"
-        case "memory": return "Memory"
-        case "network": return "Network"
-        case "disk": return "Disk"
+        case "cpu": return String(localized: "CPU")
+        case "memory": return String(localized: "Memory")
+        case "network": return String(localized: "Network")
+        case "disk": return String(localized: "Disk")
         default: return m
+        }
+    }
+
+    private func metricIcon(_ m: String) -> String {
+        switch m {
+        case "cpu": return "cpu"
+        case "memory": return "memorychip"
+        case "network": return "network"
+        case "disk": return "internaldrive"
+        default: return "chart.xyaxis.line"
+        }
+    }
+
+    private func timeframeLabel(_ tf: String) -> String {
+        switch tf {
+        case "hour": return String(localized: "1h")
+        case "day": return String(localized: "24h")
+        case "week": return String(localized: "7d")
+        default: return tf
         }
     }
 }
