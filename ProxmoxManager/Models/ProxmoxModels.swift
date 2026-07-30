@@ -139,6 +139,39 @@ struct ProxmoxResponse<T: Codable>: Codable {
     let data: T
 }
 
+/// PVE documents integer responses, but older releases and some proxies may
+/// serialize them as JSON strings.
+struct ProxmoxInteger: Codable, Equatable {
+    let value: Int
+
+    init(_ value: Int) {
+        self.value = value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(Int.self) {
+            self.value = value
+        } else if let string = try? container.decode(String.self),
+                  let value = Int(string) {
+            self.value = value
+        } else {
+            throw DecodingError.typeMismatch(
+                Int.self,
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Expected an integer or integer string."
+                )
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(value)
+    }
+}
+
 // MARK: - Cluster Resources
 
 /// The kind of resource returned by `/cluster/resources`.
@@ -567,6 +600,7 @@ struct ProxmoxStorage: Codable, Identifiable, Hashable {
     let storage: String
     let type: String
     let active: Int?
+    let enabled: Int?
     let used: Int64?
     let avail: Int64?
     let total: Int64?
@@ -575,10 +609,52 @@ struct ProxmoxStorage: Codable, Identifiable, Hashable {
 
     var id: String { storage }
 
-    var isAvailable: Bool { active == 1 }
+    var isAvailable: Bool {
+        (active ?? 1) != 0 && (enabled ?? 1) != 0
+    }
 
     var storageTypes: [String] {
         content?.split(separator: ",").map(String.init) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case storage, type, active, enabled, used, avail, total, content
+        case usedFraction = "used_fraction"
+    }
+
+    init(
+        storage: String,
+        type: String,
+        active: Int?,
+        enabled: Int? = nil,
+        used: Int64?,
+        avail: Int64?,
+        total: Int64?,
+        usedFraction: Double?,
+        content: String?
+    ) {
+        self.storage = storage
+        self.type = type
+        self.active = active
+        self.enabled = enabled
+        self.used = used
+        self.avail = avail
+        self.total = total
+        self.usedFraction = usedFraction
+        self.content = content
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        storage = try container.decode(String.self, forKey: .storage)
+        type = try container.decode(String.self, forKey: .type)
+        active = container.decodeFlexibleInt(forKey: .active)
+        enabled = container.decodeFlexibleInt(forKey: .enabled)
+        used = container.decodeFlexibleInt64(forKey: .used)
+        avail = container.decodeFlexibleInt64(forKey: .avail)
+        total = container.decodeFlexibleInt64(forKey: .total)
+        usedFraction = container.decodeFlexibleDouble(forKey: .usedFraction)
+        content = try container.decodeIfPresent(String.self, forKey: .content)
     }
 }
 
@@ -587,6 +663,18 @@ struct ProxmoxStorageStatus: Codable, Hashable {
     let avail: Int64?
     let total: Int64?
     let active: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case used, avail, total, active
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        used = container.decodeFlexibleInt64(forKey: .used)
+        avail = container.decodeFlexibleInt64(forKey: .avail)
+        total = container.decodeFlexibleInt64(forKey: .total)
+        active = container.decodeFlexibleInt(forKey: .active)
+    }
 }
 
 struct ProxmoxStorageContent: Codable, Identifiable, Hashable {
@@ -594,7 +682,7 @@ struct ProxmoxStorageContent: Codable, Identifiable, Hashable {
     let format: String?
     let size: Int64?
     let used: Int64?
-    let content: String?
+    var content: String?
     let notes: String?
     let vmid: Int?
     let ctime: Int64?
@@ -633,19 +721,13 @@ struct ProxmoxStorageContent: Codable, Identifiable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         volid = try container.decode(String.self, forKey: .volid)
         format = try container.decodeIfPresent(String.self, forKey: .format)
-        size = try container.decodeIfPresent(Int64.self, forKey: .size)
-        used = try container.decodeIfPresent(Int64.self, forKey: .used)
+        size = container.decodeFlexibleInt64(forKey: .size)
+        used = container.decodeFlexibleInt64(forKey: .used)
         content = try container.decodeIfPresent(String.self, forKey: .content)
         notes = try container.decodeIfPresent(String.self, forKey: .notes)
-        vmid = try container.decodeIfPresent(Int.self, forKey: .vmid)
-        ctime = try container.decodeIfPresent(Int64.self, forKey: .ctime)
-        if let value = try? container.decode(Int.self, forKey: .protectedFlag) {
-            protectedFlag = value
-        } else if let value = try? container.decode(Bool.self, forKey: .protectedFlag) {
-            protectedFlag = value ? 1 : 0
-        } else {
-            protectedFlag = nil
-        }
+        vmid = container.decodeFlexibleInt(forKey: .vmid)
+        ctime = container.decodeFlexibleInt64(forKey: .ctime)
+        protectedFlag = container.decodeFlexibleInt(forKey: .protectedFlag)
     }
 
     /// Friendly name extracted from volid (storage:filename).
@@ -654,6 +736,49 @@ struct ProxmoxStorageContent: Codable, Identifiable, Hashable {
             return String(volid[volid.index(after: slash)...])
         }
         return volid
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeFlexibleInt(forKey key: Key) -> Int? {
+        if let value = try? decode(Int.self, forKey: key) {
+            return value
+        }
+        if let value = try? decode(Bool.self, forKey: key) {
+            return value ? 1 : 0
+        }
+        if let value = try? decode(String.self, forKey: key) {
+            if let integer = Int(value) {
+                return integer
+            }
+            if value.lowercased() == "true" {
+                return 1
+            }
+            if value.lowercased() == "false" {
+                return 0
+            }
+        }
+        return nil
+    }
+
+    func decodeFlexibleInt64(forKey key: Key) -> Int64? {
+        if let value = try? decode(Int64.self, forKey: key) {
+            return value
+        }
+        if let value = try? decode(String.self, forKey: key) {
+            return Int64(value)
+        }
+        return nil
+    }
+
+    func decodeFlexibleDouble(forKey key: Key) -> Double? {
+        if let value = try? decode(Double.self, forKey: key) {
+            return value
+        }
+        if let value = try? decode(String.self, forKey: key) {
+            return Double(value)
+        }
+        return nil
     }
 }
 

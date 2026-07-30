@@ -409,22 +409,28 @@ struct GuestEditorView: View {
         do {
             let loadedStorages = try await service.fetchStorages(node: node)
             var media: [ProxmoxStorageContent] = []
-            for storage in loadedStorages where
-                storage.isAvailable &&
-                (storage.storageTypes.contains("iso") || storage.storageTypes.contains("vztmpl")) {
-                if let content = try? await service.fetchStorageContent(
-                    node: node,
-                    storage: storage.storage
-                ) {
-                    media.append(contentsOf: content.filter {
-                        $0.content == "iso" || $0.content == "vztmpl"
-                    })
+            var firstMediaError: Error?
+            for storage in loadedStorages where storage.isAvailable {
+                for contentType in ["iso", "vztmpl"] where storage.storageTypes.contains(contentType) {
+                    do {
+                        let content = try await service.fetchStorageContent(
+                            node: node,
+                            storage: storage.storage,
+                            content: contentType
+                        )
+                        media.append(contentsOf: content)
+                    } catch {
+                        firstMediaError = firstMediaError ?? error
+                    }
                 }
             }
             guard node == selectedNode else { return }
             storages = loadedStorages
             installationMedia = media
             selectCompatibleDefaults()
+            if media.isEmpty, let firstMediaError {
+                self.error = firstMediaError.localizedDescription
+            }
         } catch is CancellationError {
             return
         } catch {

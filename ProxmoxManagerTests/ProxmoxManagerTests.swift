@@ -273,6 +273,20 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(resp.data, "UPID:node:000:abc:task:100:root@pam:")
     }
 
+    func testProxmoxIntegerAcceptsNumberAndStringResponses() throws {
+        let number = try JSONDecoder().decode(
+            ProxmoxResponse<ProxmoxInteger>.self,
+            from: Data(#"{"data":120}"#.utf8)
+        )
+        let string = try JSONDecoder().decode(
+            ProxmoxResponse<ProxmoxInteger>.self,
+            from: Data(#"{"data":"121"}"#.utf8)
+        )
+
+        XCTAssertEqual(number.data.value, 120)
+        XCTAssertEqual(string.data.value, 121)
+    }
+
     // MARK: - AuthMethod
 
     func testAuthMethodIdentifiable() {
@@ -414,6 +428,47 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(storage.storageTypes, ["iso", "vztmpl", "backup"])
     }
 
+    func testStorageDecodesBooleanFlagsAndNumericStrings() throws {
+        let data = Data(#"""
+        {
+          "storage": "local-lvm",
+          "type": "lvmthin",
+          "active": true,
+          "enabled": "1",
+          "used": "1024",
+          "avail": 2048,
+          "total": "3072",
+          "used_fraction": "0.3333",
+          "content": "images,rootdir"
+        }
+        """#.utf8)
+
+        let storage = try JSONDecoder().decode(ProxmoxStorage.self, from: data)
+        XCTAssertTrue(storage.isAvailable)
+        XCTAssertEqual(storage.active, 1)
+        XCTAssertEqual(storage.enabled, 1)
+        XCTAssertEqual(storage.used, 1024)
+        XCTAssertEqual(storage.total, 3072)
+        XCTAssertEqual(storage.usedFraction, 0.3333)
+        XCTAssertEqual(storage.storageTypes, ["images", "rootdir"])
+    }
+
+    func testStorageContentAllowsMissingContentAndNumericStrings() throws {
+        let data = Data(#"""
+        {
+          "volid": "local:vztmpl/debian-13.tar.zst",
+          "format": "tzst",
+          "size": "2048",
+          "ctime": "1785369600"
+        }
+        """#.utf8)
+
+        let content = try JSONDecoder().decode(ProxmoxStorageContent.self, from: data)
+        XCTAssertNil(content.content)
+        XCTAssertEqual(content.size, 2048)
+        XCTAssertEqual(content.ctime, 1_785_369_600)
+    }
+
     // MARK: - Official permission response shape
 
     func testPermissionsDecodeOfficialShapeAndInheritance() throws {
@@ -453,6 +508,14 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(
             ProxmoxEndpoint.guestConfig(node: "pve1", type: .qemu, vmid: 121),
             "/nodes/pve1/qemu/121/config"
+        )
+        XCTAssertEqual(
+            ProxmoxEndpoint.storageContent(
+                node: "pve1",
+                storage: "local/templates",
+                content: "vztmpl"
+            ),
+            "/nodes/pve1/storage/local%2Ftemplates/content?content=vztmpl"
         )
     }
 

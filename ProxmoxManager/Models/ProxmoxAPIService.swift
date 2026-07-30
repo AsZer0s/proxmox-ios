@@ -18,6 +18,14 @@ enum ProxmoxEndpoint {
         "\(guest(node: node, type: type, vmid: vmid))/config"
     }
 
+    static func storageContent(node: String, storage: String, content: String? = nil) -> String {
+        var path = "/nodes/\(node)/storage/\(storage.pathEscaped)/content"
+        if let content, !content.isEmpty {
+            path += "?content=\(content.formURLEncoded)"
+        }
+        return path
+    }
+
     static func backupArchives(node: String, storage: String) -> String {
         "/nodes/\(node)/storage/\(storage.pathEscaped)/content?content=backup"
     }
@@ -291,7 +299,7 @@ actor ProxmoxAPIService {
     }
 
     func fetchNextVMID() async throws -> Int {
-        try await get(ProxmoxEndpoint.nextVMID, as: Int.self)
+        try await get(ProxmoxEndpoint.nextVMID, as: ProxmoxInteger.self).value
     }
 
     @discardableResult
@@ -445,8 +453,23 @@ actor ProxmoxAPIService {
         try await get("/nodes/\(node)/storage/\(storage.pathEscaped)/status", as: ProxmoxStorageStatus.self)
     }
 
-    func fetchStorageContent(node: String, storage: String) async throws -> [ProxmoxStorageContent] {
-        try await get("/nodes/\(node)/storage/\(storage.pathEscaped)/content", as: [ProxmoxStorageContent].self)
+    func fetchStorageContent(
+        node: String,
+        storage: String,
+        content: String? = nil
+    ) async throws -> [ProxmoxStorageContent] {
+        let path = ProxmoxEndpoint.storageContent(
+            node: node,
+            storage: storage,
+            content: content
+        )
+        var items = try await get(path, as: [ProxmoxStorageContent].self)
+        if let content {
+            for index in items.indices where items[index].content == nil {
+                items[index].content = content
+            }
+        }
+        return items
     }
 
     // MARK: Backups
