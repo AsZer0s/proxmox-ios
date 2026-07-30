@@ -166,7 +166,6 @@ struct RRDChartView: View {
                 // Metric picker
                 Picker("Metric", selection: $selectedMetric) {
                     ForEach(metrics, id: \.self) { m in
-                        Label(metricIcon(m), systemImage: "").tag(m)
                         Text(metricDisplayName(m)).tag(m)
                     }
                 }
@@ -411,16 +410,6 @@ struct RRDChartView: View {
         case "network": return String(localized: "Network")
         case "disk": return String(localized: "Disk")
         default: return m
-        }
-    }
-
-    private func metricIcon(_ m: String) -> String {
-        switch m {
-        case "cpu": return "cpu"
-        case "memory": return "memorychip"
-        case "network": return "network"
-        case "disk": return "internaldrive"
-        default: return "chart.xyaxis.line"
         }
     }
 
