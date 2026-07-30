@@ -24,7 +24,7 @@ struct GuestEditorView: View {
     @State private var swapMiBText = "512"
     @State private var selectedStorage = ""
     @State private var diskSizeGiBText = "32"
-    @State private var bridge = "vmbr0"
+    @State private var networkSettings = GuestNetworkSettings(type: .qemu)
     @State private var osType = "l26"
     @State private var selectedInstallationVolume = ""
     @State private var rootPassword = ""
@@ -131,7 +131,7 @@ struct GuestEditorView: View {
             guard !selectedNode.isEmpty,
                   !selectedStorage.isEmpty,
                   let disk = Int(diskSizeGiBText), disk >= 1,
-                  !bridge.trimmed.isEmpty else {
+                  networkSettings.isValid else {
                 return false
             }
             if selectedType == .lxc {
@@ -213,6 +213,13 @@ struct GuestEditorView: View {
             }
             .onChange(of: selectedType) { _ in
                 selectCompatibleDefaults()
+                resetNetworkSettings()
+            }
+            .onChange(of: osType) { newValue in
+                guard selectedType == .qemu else { return }
+                if newValue.hasPrefix("win"), networkSettings.model == "virtio" {
+                    networkSettings.model = "e1000"
+                }
             }
             .sheet(isPresented: $showingMediaManager) {
                 InstallationMediaManagerView(
@@ -337,15 +344,100 @@ struct GuestEditorView: View {
         }
     }
 
+    @ViewBuilder
     private var networkSection: some View {
         Section {
-            TextField("Bridge", text: $bridge)
+            if selectedType == .qemu {
+                Picker("Model", selection: $networkSettings.model) {
+                    Text("VirtIO").tag("virtio")
+                    Text("Intel E1000").tag("e1000")
+                    Text("VMware VMXNET3").tag("vmxnet3")
+                    Text("Realtek RTL8139").tag("rtl8139")
+                }
+            } else {
+                TextField("Interface Name", text: $networkSettings.interfaceName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+            TextField("Bridge", text: $networkSettings.bridge)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+            TextField("VLAN Tag (optional)", text: $networkSettings.vlanTag)
+                .keyboardType(.numberPad)
         } header: {
             Text("Network")
         } footer: {
             Text("The selected account also needs permission to use this bridge.")
+        }
+
+        if selectedType == .lxc {
+            Section {
+                Picker("IPv4 Configuration", selection: $networkSettings.ipv4Mode) {
+                    Text("No Configuration").tag(GuestNetworkSettings.IPMode.unspecified)
+                    Text("DHCP").tag(GuestNetworkSettings.IPMode.dhcp)
+                    Text("Static").tag(GuestNetworkSettings.IPMode.static)
+                    Text("Manual").tag(GuestNetworkSettings.IPMode.manual)
+                }
+                if networkSettings.ipv4Mode == .static {
+                    TextField("IPv4 Address / CIDR", text: $networkSettings.ipv4Address)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("IPv4 Gateway (optional)", text: $networkSettings.ipv4Gateway)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                Picker("IPv6 Configuration", selection: $networkSettings.ipv6Mode) {
+                    Text("No Configuration").tag(GuestNetworkSettings.IPMode.unspecified)
+                    Text("Automatic").tag(GuestNetworkSettings.IPMode.automatic)
+                    Text("DHCP").tag(GuestNetworkSettings.IPMode.dhcp)
+                    Text("Static").tag(GuestNetworkSettings.IPMode.static)
+                    Text("Manual").tag(GuestNetworkSettings.IPMode.manual)
+                }
+                if networkSettings.ipv6Mode == .static {
+                    TextField("IPv6 Address / CIDR", text: $networkSettings.ipv6Address)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("IPv6 Gateway (optional)", text: $networkSettings.ipv6Gateway)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+            } header: {
+                Text("IP Configuration")
+            }
+        }
+
+        Section {
+            TextField("MAC Address (optional)", text: $networkSettings.macAddress)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+            Toggle("Firewall", isOn: $networkSettings.firewall)
+            Toggle("Disconnected", isOn: $networkSettings.linkDown)
+            TextField("Rate Limit (MB/s, optional)", text: $networkSettings.rateLimit)
+                .keyboardType(.decimalPad)
+            TextField("MTU (optional)", text: $networkSettings.mtu)
+                .keyboardType(.numberPad)
+            if selectedType == .qemu {
+                TextField("Multiqueue (optional)", text: $networkSettings.queues)
+                    .keyboardType(.numberPad)
+            }
+            TextField("VLAN Trunks (optional)", text: $networkSettings.trunks)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        } header: {
+            Text("Advanced")
+        } footer: {
+            Text("Use semicolons between VLAN trunk IDs.")
+        }
+
+        if !networkSettings.isValid {
+            Section {
+                Label(
+                    "Check the MAC, IP/CIDR, gateway, VLAN, rate limit, MTU and queue values.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .foregroundStyle(.orange)
+            }
         }
     }
 
@@ -481,6 +573,15 @@ struct GuestEditorView: View {
         }
     }
 
+    private func resetNetworkSettings() {
+        let existingBridge = networkSettings.bridge
+        networkSettings = GuestNetworkSettings(type: selectedType)
+        networkSettings.bridge = existingBridge
+        if selectedType == .qemu, osType.hasPrefix("win") {
+            networkSettings.model = "e1000"
+        }
+    }
+
     @MainActor
     private func refreshInstallationMediaAfterDownload() async {
         await loadNodeResources(node: selectedNode)
@@ -530,7 +631,7 @@ struct GuestEditorView: View {
             startAfterCreation: startAfterCreation,
             storage: selectedStorage,
             diskSizeGiB: diskSize,
-            bridge: bridge.trimmed,
+            network: networkSettings,
             osType: osType,
             installationVolume: selectedInstallationVolume.isEmpty ? nil : selectedInstallationVolume,
             rootPassword: selectedType == .lxc ? rootPassword : nil,

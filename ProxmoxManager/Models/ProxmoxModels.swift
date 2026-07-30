@@ -340,7 +340,7 @@ struct GuestCreateRequest: Equatable {
     let startAfterCreation: Bool
     let storage: String
     let diskSizeGiB: Int
-    let bridge: String
+    let network: GuestNetworkSettings
     let osType: String
     let installationVolume: String?
     let rootPassword: String?
@@ -364,7 +364,7 @@ struct GuestCreateRequest: Equatable {
             values["sockets"] = "\(sockets)"
             values["ostype"] = osType
             values[disk] = "\(storage):\(diskSizeGiB)"
-            values["net0"] = "\(isWindows ? "e1000" : "virtio"),bridge=\(bridge)"
+            values["net0"] = network.encodedValue
             if !isWindows {
                 values["scsihw"] = "virtio-scsi-pci"
                 values["agent"] = "enabled=1"
@@ -382,7 +382,7 @@ struct GuestCreateRequest: Equatable {
             values["rootfs"] = "\(storage):\(diskSizeGiB)"
             values["swap"] = "\(swapMiB)"
             values["unprivileged"] = unprivileged ? "1" : "0"
-            values["net0"] = "name=eth0,bridge=\(bridge),ip=dhcp"
+            values["net0"] = network.encodedValue
             if let rootPassword, !rootPassword.isEmpty {
                 values["password"] = rootPassword
             }
@@ -652,7 +652,6 @@ struct GuestNetworkSettings: Equatable {
         guard let value, !value.isEmpty else {
             if type == .lxc {
                 ipv4Mode = .dhcp
-                ipv6Mode = .automatic
             }
             return
         }

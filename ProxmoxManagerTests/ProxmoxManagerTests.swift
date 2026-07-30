@@ -644,6 +644,11 @@ final class ProxmoxManagerTests: XCTestCase {
     }
 
     func testQEMUCreateRequestBuildsLinuxForm() {
+        var network = GuestNetworkSettings(type: .qemu)
+        network.bridge = "vmbr1"
+        network.macAddress = "02:00:00:00:00:10"
+        network.firewall = true
+        network.rateLimit = "25"
         let request = GuestCreateRequest(
             node: "pve1",
             type: .qemu,
@@ -656,7 +661,7 @@ final class ProxmoxManagerTests: XCTestCase {
             startAfterCreation: false,
             storage: "local-lvm",
             diskSizeGiB: 32,
-            bridge: "vmbr1",
+            network: network,
             osType: "l26",
             installationVolume: "local:iso/debian.iso",
             rootPassword: nil,
@@ -667,7 +672,10 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(request.form["name"], "web-01")
         XCTAssertEqual(request.form["scsi0"], "local-lvm:32")
         XCTAssertEqual(request.form["scsihw"], "virtio-scsi-pci")
-        XCTAssertEqual(request.form["net0"], "virtio,bridge=vmbr1")
+        XCTAssertEqual(
+            request.form["net0"],
+            "virtio=02:00:00:00:00:10,bridge=vmbr1,firewall=1,rate=25"
+        )
         XCTAssertEqual(request.form["ide2"], "local:iso/debian.iso,media=cdrom")
         XCTAssertEqual(request.form["boot"], "order=scsi0;ide2")
         XCTAssertEqual(request.form["onboot"], "1")
@@ -675,6 +683,8 @@ final class ProxmoxManagerTests: XCTestCase {
     }
 
     func testLXCCreateRequestBuildsContainerForm() {
+        var network = GuestNetworkSettings(type: .lxc)
+        network.bridge = "vmbr0"
         let request = GuestCreateRequest(
             node: "pve1",
             type: .lxc,
@@ -687,7 +697,7 @@ final class ProxmoxManagerTests: XCTestCase {
             startAfterCreation: true,
             storage: "local-lvm",
             diskSizeGiB: 8,
-            bridge: "vmbr0",
+            network: network,
             osType: "l26",
             installationVolume: "local:vztmpl/debian.tar.zst",
             rootPassword: "secret",
@@ -701,7 +711,7 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(request.form["password"], "secret")
         XCTAssertEqual(request.form["swap"], "512")
         XCTAssertEqual(request.form["unprivileged"], "1")
-        XCTAssertEqual(request.form["net0"], "name=eth0,bridge=vmbr0,ip=dhcp")
+        XCTAssertEqual(request.form["net0"], "name=eth0,type=veth,bridge=vmbr0,ip=dhcp")
     }
 
     func testMutationFormBodyIsDeterministicAndEncoded() {
