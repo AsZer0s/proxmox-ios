@@ -3,10 +3,12 @@
 
 # Proxmox Manager
 
-**把 Proxmox VE 装进口袋。**
+**Put Proxmox VE in your pocket.**
 
-一款为 iPhone 与 iPad 打造的原生 Proxmox VE 管理客户端。<br>
-随时查看集群状态、管理虚拟机与容器，并安全地处理日常运维任务。
+A native Proxmox VE management client built for iPhone and iPad.<br>
+Monitor your cluster, manage virtual machines and containers, and handle everyday operations securely from anywhere.
+
+English · [简体中文](README_zhCN.md)
 
 ![iOS 16+](https://img.shields.io/badge/iOS-16.0%2B-0A84FF?style=flat-square&logo=apple)
 ![SwiftUI](https://img.shields.io/badge/Interface-SwiftUI-0A84FF?style=flat-square)
@@ -14,67 +16,65 @@
 ![License](https://img.shields.io/badge/License-MIT-34C759?style=flat-square)
 </div>
 
----
+## Your Proxmox cluster, always within reach
 
-## 随时掌控你的 Proxmox 集群
+Proxmox Manager connects directly to your Proxmox VE server and presents nodes, virtual machines, LXC containers, storage, and tasks in an interface designed for iOS. There is no desktop web interface squeezed onto a phone and no third-party relay between your device and your server.
 
-Proxmox Manager 直接连接你的 Proxmox VE 服务器，以符合 iOS 使用习惯的方式呈现节点、虚拟机、LXC 容器、存储与任务状态。无需在手机浏览器中操作桌面网页，也无需经过第三方中转服务。
+Whether you are checking cluster health, responding to an unavailable guest, or provisioning a new workload, the controls you need stay clear and close at hand.
 
-无论是快速巡检、处理异常实例，还是创建与调整工作负载，都可以在一个清晰、原生的界面中完成。
-
-## 核心功能
+## Features
 
 | | |
 |---|---|
-| **集群与节点** | 查看多节点状态、在线时间、负载以及 CPU、内存和磁盘使用情况。 |
-| **虚拟机与容器** | 集中浏览 QEMU 虚拟机与 LXC 容器，支持按名称、VMID、节点和状态搜索筛选。 |
-| **生命周期管理** | 启动、重启、正常关机或强制停止实例，并通过确认提示降低误操作风险。 |
-| **创建与配置** | 创建、编辑、删除及完整克隆虚拟机和容器，调整 CPU、内存、启动选项等配置。 |
-| **硬件管理** | 查看和调整磁盘、网络接口，支持磁盘扩容与网络参数配置。 |
-| **Cloud-Init** | 管理用户、SSH 公钥、DNS、软件包升级以及 IPv4 / IPv6 网络配置。 |
-| **快照** | 创建、回滚和删除快照，可选择是否保存虚拟机运行状态。 |
-| **存储与备份** | 查看存储容量、使用率和内容，浏览备份计划与现有备份归档。 |
-| **安装介质** | 从 URL 导入 ISO，或浏览并下载 Proxmox LXC Appliance Templates。 |
-| **性能图表** | 查看节点或实例的 CPU、内存、网络和磁盘历史数据，支持小时、天、周视图。 |
-| **任务中心** | 跟踪长时间运行的 Proxmox 任务，查看结果与日志，并可取消仍在执行的任务。 |
+| **Cluster and nodes** | Monitor multiple nodes, uptime, load, CPU, memory, and disk usage. |
+| **Virtual machines and containers** | Browse QEMU virtual machines and LXC containers together, with search and filters for name, VMID, node, and status. |
+| **Lifecycle controls** | Start, reboot, gracefully shut down, or force-stop guests with confirmation for destructive actions. |
+| **Create and configure** | Create, edit, delete, and fully clone virtual machines and containers. Adjust CPU, memory, boot behavior, and other options. |
+| **Hardware management** | Inspect and manage disks and network interfaces, including disk expansion and network configuration. |
+| **Cloud-Init** | Configure users, SSH keys, DNS, package upgrades, and IPv4 / IPv6 networking. |
+| **Snapshots** | Create, roll back, and delete snapshots, with optional virtual machine state capture. |
+| **Storage and backups** | Review storage capacity, usage, and content, plus backup schedules and available archives. |
+| **Installation media** | Import an ISO from a URL or browse and download Proxmox LXC appliance templates. |
+| **Performance charts** | Explore CPU, memory, network, and disk history for nodes and guests across hourly, daily, and weekly ranges. |
+| **Task center** | Follow long-running Proxmox tasks, inspect results and logs, and cancel tasks that are still running. |
 
-## 安全连接
+## Secure by design
 
-- 支持用户名密码、API Token 与 TOTP 双重验证
-- 密码、Token Secret 与证书指纹保存在 iOS Keychain
-- 支持由可信 CA 签发的证书
-- 自签名证书首次连接时显示 SHA-256 指纹并要求确认
-- 已固定的证书发生变化时自动拒绝连接
-- 可使用 Face ID 锁定 App，进入后台时自动遮挡敏感界面
-- 会话失效后自动重新认证，减少重复登录
-- 所有连接均由设备直接发往你的 Proxmox VE，不依赖云端中转
+- Password, API Token, and TOTP authentication
+- Passwords, token secrets, and certificate fingerprints stored in iOS Keychain
+- Support for certificates issued by trusted certificate authorities
+- Explicit SHA-256 fingerprint confirmation for self-signed certificates
+- Automatic rejection when a pinned certificate changes
+- Optional Face ID lock with an automatic privacy cover in the background
+- Automatic reauthentication when a password-based session expires
+- Direct device-to-server connections with no cloud relay
 
-## 原生移动体验
+## A native mobile experience
 
-- 为 iPhone 与 iPad 设计的 SwiftUI 界面
-- 支持简体中文与英文
-- 前台自动刷新，支持下拉手动刷新
-- 根据当前 Proxmox 账户权限显示可用操作
-- 对强制停止、删除、快照回滚等高风险操作提供明确确认
-- 深色模式、动态字体与系统原生交互
+- SwiftUI interface designed for iPhone and iPad
+- English and Simplified Chinese localization
+- Foreground auto-refresh and pull-to-refresh
+- Permission-aware controls based on the connected Proxmox account
+- Clear confirmation for force stop, deletion, snapshot rollback, and other high-risk operations
+- Dark Mode, Dynamic Type, and familiar system interactions
 
-## 兼容性
+## Compatibility
 
-- iOS / iPadOS 16.0 或更高版本
-- Proxmox VE 6.0 或更高版本
-- 支持单节点及多节点集群
-- 可使用密码或 API Token 连接
+- iOS / iPadOS 16.0 or later
+- Proxmox VE 6.0 or later
+- Single-node installations and multi-node clusters
+- Password or API Token authentication
 
-部分管理功能需要对应的 Proxmox VE 权限；权限不足时，App 会隐藏相关操作或给出提示。
+Some management features require the corresponding Proxmox VE privileges. When an account lacks permission, the app hides the unavailable action or explains why it cannot be performed.
 
-## 隐私
+## Privacy
 
-Proxmox Manager 不包含广告或用户追踪，不收集个人数据。服务器信息与凭据保存在设备本地，运行数据直接从你配置的 Proxmox VE 获取。
+Proxmox Manager contains no advertising or user tracking and does not collect personal data. Server details and credentials remain on your device, while operational data is retrieved directly from the Proxmox VE servers you configure.
 
-## 声明
+## Disclaimer
 
-Proxmox Manager 是独立开发的第三方客户端，与 Proxmox Server Solutions GmbH 无隶属或官方合作关系。Proxmox 及 Proxmox VE 是其各自所有者的商标。
+Proxmox Manager is an independently developed third-party client and is not affiliated with or endorsed by Proxmox Server Solutions GmbH. Proxmox and Proxmox VE are trademarks of their respective owner.
 
-## 许可
+## License
 
-本项目采用 [MIT License](LICENSE)。
+This project is available under the [MIT License](LICENSE).
