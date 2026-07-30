@@ -2,9 +2,8 @@ name: Build Unsigned IPA
 
 on:
   push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
+    tags:
+      - "*"
   workflow_dispatch:
 
 jobs:
