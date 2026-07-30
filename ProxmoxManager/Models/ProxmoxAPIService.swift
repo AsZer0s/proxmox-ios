@@ -4,6 +4,19 @@ import Security
 
 enum ProxmoxEndpoint {
     static let backupJobs = "/cluster/backup"
+    static let nextVMID = "/cluster/nextid"
+
+    static func guests(node: String, type: GuestType) -> String {
+        "/nodes/\(node)/\(type.apiPath)"
+    }
+
+    static func guest(node: String, type: GuestType, vmid: Int) -> String {
+        "\(guests(node: node, type: type))/\(vmid)"
+    }
+
+    static func guestConfig(node: String, type: GuestType, vmid: Int) -> String {
+        "\(guest(node: node, type: type, vmid: vmid))/config"
+    }
 
     static func backupArchives(node: String, storage: String) -> String {
         "/nodes/\(node)/storage/\(storage.pathEscaped)/content?content=backup"
@@ -274,7 +287,46 @@ actor ProxmoxAPIService {
     }
 
     func fetchGuestConfig(node: String, type: GuestType, vmid: Int) async throws -> GuestConfig {
-        try await get("/nodes/\(node)/\(type.apiPath)/\(vmid)/config", as: GuestConfig.self)
+        try await get(ProxmoxEndpoint.guestConfig(node: node, type: type, vmid: vmid), as: GuestConfig.self)
+    }
+
+    func fetchNextVMID() async throws -> Int {
+        try await get(ProxmoxEndpoint.nextVMID, as: Int.self)
+    }
+
+    @discardableResult
+    func createGuest(_ request: GuestCreateRequest) async throws -> String {
+        try await post(
+            ProxmoxEndpoint.guests(node: request.node, type: request.type),
+            form: request.form
+        )
+    }
+
+    @discardableResult
+    func updateGuest(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        form: [String: String]
+    ) async throws -> String {
+        guard !form.isEmpty else { return "" }
+        return try await put(
+            ProxmoxEndpoint.guestConfig(node: node, type: type, vmid: vmid),
+            form: form
+        )
+    }
+
+    @discardableResult
+    func deleteGuest(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        purge: Bool = true
+    ) async throws -> String {
+        return try await delete(
+            ProxmoxEndpoint.guest(node: node, type: type, vmid: vmid),
+            form: ["purge": purge ? "1" : "0"]
+        )
     }
 
     func fetchSnapshots(node: String, type: GuestType, vmid: Int) async throws -> [GuestSnapshot] {
@@ -571,36 +623,58 @@ actor ProxmoxAPIService {
         applyAuth(to: &request)
         if !form.isEmpty {
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.httpBody = form.keys.sorted()
-                .compactMap { key in
-                    guard let value = form[key] else { return nil }
-                    return "\(key.formURLEncoded)=\(value.formURLEncoded)"
-                }
-                .joined(separator: "&")
-                .data(using: .utf8)
+            request.httpBody = Self.formBody(form)
         }
 
         let (data, _) = try await performAuthenticatedRequest(request)
-
-        // The UPID payload is a bare string; tolerate an empty body too.
-        if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String>.self, from: data) {
-            return decoded.data
-        }
-        return String(data: data, encoding: .utf8) ?? ""
+        return Self.mutationResult(from: data)
     }
 
     @discardableResult
-    private func delete(_ path: String) async throws -> String {
+    private func put(_ path: String, form: [String: String]) async throws -> String {
+        guard server.authMethod == .token || ticket != nil else { throw ProxmoxError.notAuthenticated }
+        guard let url = URL(string: server.baseURL + path) else { throw ProxmoxError.invalidURL }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        applyAuth(to: &request)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Self.formBody(form)
+
+        let (data, _) = try await performAuthenticatedRequest(request)
+        return Self.mutationResult(from: data)
+    }
+
+    @discardableResult
+    private func delete(_ path: String, form: [String: String] = [:]) async throws -> String {
         guard server.authMethod == .token || ticket != nil else { throw ProxmoxError.notAuthenticated }
         guard let url = URL(string: server.baseURL + path) else { throw ProxmoxError.invalidURL }
 
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         applyAuth(to: &request)
+        if !form.isEmpty {
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.httpBody = Self.formBody(form)
+        }
 
         let (data, _) = try await performAuthenticatedRequest(request)
-        if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String>.self, from: data) {
-            return decoded.data
+        return Self.mutationResult(from: data)
+    }
+
+    static func formBody(_ form: [String: String]) -> Data? {
+        form.keys.sorted()
+            .compactMap { key in
+                guard let value = form[key] else { return nil }
+                return "\(key.formURLEncoded)=\(value.formURLEncoded)"
+            }
+            .joined(separator: "&")
+            .data(using: .utf8)
+    }
+
+    private static func mutationResult(from data: Data) -> String {
+        if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String?>.self, from: data) {
+            return decoded.data ?? ""
         }
         return String(data: data, encoding: .utf8) ?? ""
     }

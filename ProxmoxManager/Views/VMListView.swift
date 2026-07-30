@@ -12,6 +12,7 @@ struct VMListView: View {
     @State private var selectedStatus: String?
     @State private var selectedNode: String?
     @State private var showingFilters = false
+    @State private var showingCreateGuest = false
 
     private var filteredGuests: [ProxmoxVM] {
         var result = model.guests
@@ -74,7 +75,16 @@ struct VMListView: View {
             }
             .navigationTitle("VMs & CTs")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    if appState.hasPrivilege("VM.Allocate", on: "/vms") {
+                        Button {
+                            showingCreateGuest = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("Create guest")
+                    }
+
                     Button {
                         showingFilters = true
                     } label: {
@@ -84,6 +94,12 @@ struct VMListView: View {
             }
             .sheet(isPresented: $showingFilters) {
                 filterSheet
+            }
+            .sheet(isPresented: $showingCreateGuest) {
+                GuestEditorView(mode: .create) {
+                    Task { await model.load(service: appState.service) }
+                }
+                .environmentObject(appState)
             }
             .refreshable { await model.load(service: appState.service) }
             .task {

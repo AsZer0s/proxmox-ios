@@ -295,6 +295,70 @@ enum GuestType: String, Codable, CaseIterable {
     var apiPath: String { rawValue }
 }
 
+struct GuestCreateRequest: Equatable {
+    let node: String
+    let type: GuestType
+    let vmid: Int
+    let name: String
+    let cores: Int
+    let sockets: Int
+    let memoryMiB: Int
+    let onBoot: Bool
+    let startAfterCreation: Bool
+    let storage: String
+    let diskSizeGiB: Int
+    let bridge: String
+    let osType: String
+    let installationVolume: String?
+    let rootPassword: String?
+    let swapMiB: Int
+    let unprivileged: Bool
+
+    var form: [String: String] {
+        var values: [String: String] = [
+            "vmid": "\(vmid)",
+            "cores": "\(cores)",
+            "memory": "\(memoryMiB)",
+            "onboot": onBoot ? "1" : "0",
+            "start": startAfterCreation ? "1" : "0",
+        ]
+
+        switch type {
+        case .qemu:
+            let isWindows = osType.hasPrefix("win")
+            let disk = isWindows ? "sata0" : "scsi0"
+            values["name"] = name
+            values["sockets"] = "\(sockets)"
+            values["ostype"] = osType
+            values[disk] = "\(storage):\(diskSizeGiB)"
+            values["net0"] = "\(isWindows ? "e1000" : "virtio"),bridge=\(bridge)"
+            if !isWindows {
+                values["scsihw"] = "virtio-scsi-pci"
+                values["agent"] = "enabled=1"
+            }
+            if let installationVolume, !installationVolume.isEmpty {
+                values["ide2"] = "\(installationVolume),media=cdrom"
+                values["boot"] = "order=\(disk);ide2"
+            } else {
+                values["boot"] = "order=\(disk)"
+            }
+
+        case .lxc:
+            values["hostname"] = name
+            values["ostemplate"] = installationVolume
+            values["rootfs"] = "\(storage):\(diskSizeGiB)"
+            values["swap"] = "\(swapMiB)"
+            values["unprivileged"] = unprivileged ? "1" : "0"
+            values["net0"] = "name=eth0,bridge=\(bridge),ip=dhcp"
+            if let rootPassword, !rootPassword.isEmpty {
+                values["password"] = rootPassword
+            }
+        }
+
+        return values
+    }
+}
+
 /// Detailed guest status from `/status/current`.
 struct VMStatus: Codable, Hashable {
     let status: String

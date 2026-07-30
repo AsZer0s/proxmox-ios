@@ -105,6 +105,14 @@ final class AppState: ObservableObject {
         return permissions.hasPrivilege(privilege, on: "/")
     }
 
+    func hasPrivilege(_ privilege: String, on path: String) -> Bool {
+        permissions?.hasPrivilege(privilege, on: path) == true
+    }
+
+    func hasAnyPrivilege(_ privileges: [String], for vmid: Int) -> Bool {
+        privileges.contains { hasPrivilege($0, for: vmid) }
+    }
+
     // MARK: - Server management
 
     func addServer(_ server: ProxmoxServer, secret: String) {

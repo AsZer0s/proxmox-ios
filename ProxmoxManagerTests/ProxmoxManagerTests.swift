@@ -438,6 +438,97 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertFalse(response.data.hasPrivilege("VM.Snapshot", on: "/vms/101"))
     }
 
+    // MARK: - Guest lifecycle API contracts
+
+    func testGuestLifecycleEndpointsMatchPVEAPI() {
+        XCTAssertEqual(ProxmoxEndpoint.nextVMID, "/cluster/nextid")
+        XCTAssertEqual(
+            ProxmoxEndpoint.guests(node: "pve1", type: .qemu),
+            "/nodes/pve1/qemu"
+        )
+        XCTAssertEqual(
+            ProxmoxEndpoint.guest(node: "pve1", type: .lxc, vmid: 120),
+            "/nodes/pve1/lxc/120"
+        )
+        XCTAssertEqual(
+            ProxmoxEndpoint.guestConfig(node: "pve1", type: .qemu, vmid: 121),
+            "/nodes/pve1/qemu/121/config"
+        )
+    }
+
+    func testQEMUCreateRequestBuildsLinuxForm() {
+        let request = GuestCreateRequest(
+            node: "pve1",
+            type: .qemu,
+            vmid: 120,
+            name: "web-01",
+            cores: 4,
+            sockets: 2,
+            memoryMiB: 4096,
+            onBoot: true,
+            startAfterCreation: false,
+            storage: "local-lvm",
+            diskSizeGiB: 32,
+            bridge: "vmbr1",
+            osType: "l26",
+            installationVolume: "local:iso/debian.iso",
+            rootPassword: nil,
+            swapMiB: 0,
+            unprivileged: true
+        )
+
+        XCTAssertEqual(request.form["name"], "web-01")
+        XCTAssertEqual(request.form["scsi0"], "local-lvm:32")
+        XCTAssertEqual(request.form["scsihw"], "virtio-scsi-pci")
+        XCTAssertEqual(request.form["net0"], "virtio,bridge=vmbr1")
+        XCTAssertEqual(request.form["ide2"], "local:iso/debian.iso,media=cdrom")
+        XCTAssertEqual(request.form["boot"], "order=scsi0;ide2")
+        XCTAssertEqual(request.form["onboot"], "1")
+        XCTAssertEqual(request.form["start"], "0")
+    }
+
+    func testLXCCreateRequestBuildsContainerForm() {
+        let request = GuestCreateRequest(
+            node: "pve1",
+            type: .lxc,
+            vmid: 220,
+            name: "worker-01",
+            cores: 2,
+            sockets: 1,
+            memoryMiB: 1024,
+            onBoot: false,
+            startAfterCreation: true,
+            storage: "local-lvm",
+            diskSizeGiB: 8,
+            bridge: "vmbr0",
+            osType: "l26",
+            installationVolume: "local:vztmpl/debian.tar.zst",
+            rootPassword: "secret",
+            swapMiB: 512,
+            unprivileged: true
+        )
+
+        XCTAssertEqual(request.form["hostname"], "worker-01")
+        XCTAssertEqual(request.form["ostemplate"], "local:vztmpl/debian.tar.zst")
+        XCTAssertEqual(request.form["rootfs"], "local-lvm:8")
+        XCTAssertEqual(request.form["password"], "secret")
+        XCTAssertEqual(request.form["swap"], "512")
+        XCTAssertEqual(request.form["unprivileged"], "1")
+        XCTAssertEqual(request.form["net0"], "name=eth0,bridge=vmbr0,ip=dhcp")
+    }
+
+    func testMutationFormBodyIsDeterministicAndEncoded() {
+        let data = ProxmoxAPIService.formBody([
+            "name": "web & api",
+            "net0": "virtio,bridge=vmbr0",
+        ])
+
+        XCTAssertEqual(
+            data.flatMap { String(data: $0, encoding: .utf8) },
+            "name=web%20%26%20api&net0=virtio%2Cbridge%3Dvmbr0"
+        )
+    }
+
     // MARK: - Backup API contracts
 
     func testBackupEndpointsMatchPVEAPI() {

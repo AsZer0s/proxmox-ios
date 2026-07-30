@@ -5,6 +5,7 @@ import SwiftUI
 struct VMDetailView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var model = VMDetailViewModel()
 
     let guest: ProxmoxVM
@@ -12,6 +13,8 @@ struct VMDetailView: View {
     @State private var pendingAction: GuestAction?
     @State private var pendingSnapshotAction: SnapshotAction?
     @State private var showingCreateSnapshot = false
+    @State private var showingEditGuest = false
+    @State private var showingDeleteGuest = false
 
     var body: some View {
         List {
@@ -25,6 +28,36 @@ struct VMDetailView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(guest.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if canManageGuest {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        if canEditGuest {
+                            Button {
+                                showingEditGuest = true
+                            } label: {
+                                Label("Edit Guest", systemImage: "pencil")
+                            }
+                        }
+
+                        if canDeleteGuest {
+                            Button(role: .destructive) {
+                                showingDeleteGuest = true
+                            } label: {
+                                Label("Delete Guest", systemImage: "trash")
+                            }
+                            .disabled(isRunning)
+
+                            if isRunning {
+                                Text("Stop the guest before deleting it.")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+        }
         .refreshable { await model.refresh(service: appState.service, guest: guest) }
         .task {
             await model.refresh(service: appState.service, guest: guest)
@@ -122,6 +155,23 @@ struct VMDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingEditGuest) {
+            if let config = model.config {
+                GuestEditorView(mode: .edit(guest: guest, config: config)) {
+                    Task {
+                        await model.refresh(service: appState.service, guest: guest)
+                    }
+                }
+                .environmentObject(appState)
+            }
+        }
+        .sheet(isPresented: $showingDeleteGuest) {
+            DeleteGuestConfirmationView(guest: guest) {
+                try await deleteGuest()
+            } onDeleted: {
+                dismiss()
+            }
+        }
         .overlay {
             if model.isPerformingAction {
                 Color.black.opacity(0.1).ignoresSafeArea()
@@ -151,6 +201,21 @@ struct VMDetailView: View {
 
     private var isRunning: Bool {
         model.status?.isRunning ?? guest.isRunning
+    }
+
+    private var canEditGuest: Bool {
+        model.config != nil && appState.hasAnyPrivilege(
+            ["VM.Config.Options", "VM.Config.CPU", "VM.Config.Memory"],
+            for: guest.vmid
+        )
+    }
+
+    private var canDeleteGuest: Bool {
+        appState.hasPrivilege("VM.Allocate", for: guest.vmid)
+    }
+
+    private var canManageGuest: Bool {
+        canEditGuest || canDeleteGuest
     }
 
     @ViewBuilder
@@ -364,6 +429,27 @@ struct VMDetailView: View {
             }
         }
     }
+
+    private func deleteGuest() async throws {
+        guard let service = appState.service else { return }
+        let upid = try await service.deleteGuest(
+            node: guest.node,
+            type: guest.type,
+            vmid: guest.vmid
+        )
+        if !upid.isEmpty {
+            appState.taskCenter.track(
+                upid: upid,
+                node: guest.node,
+                title: guest.type == .qemu
+                    ? String(localized: "Delete virtual machine")
+                    : String(localized: "Delete container"),
+                object: "\(guest.displayName) · \(guest.vmid)",
+                service: service
+            )
+            _ = try await service.waitForTask(node: guest.node, upid: upid)
+        }
+    }
 }
 
 private enum SnapshotAction {
@@ -458,6 +544,80 @@ private struct CreateSnapshotView: View {
                     .disabled(name.trimmed.isEmpty)
                 }
             }
+        }
+    }
+}
+
+private struct DeleteGuestConfirmationView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmation = ""
+    @State private var isDeleting = false
+    @State private var error: String?
+
+    let guest: ProxmoxVM
+    let onDelete: () async throws -> Void
+    let onDeleted: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Label(guest.displayName, systemImage: guest.type == .qemu ? "desktopcomputer" : "shippingbox")
+                    LabeledContent("VMID", value: "\(guest.vmid)")
+                    LabeledContent("Node", value: guest.node)
+                }
+
+                Section {
+                    Text("This permanently deletes the guest configuration and owned disks.")
+                        .foregroundStyle(.red)
+                    TextField("Type \(guest.vmid) to confirm", text: $confirmation)
+                        .keyboardType(.numberPad)
+                } header: {
+                    Text("Confirmation")
+                }
+
+                if let error {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Delete Guest")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isDeleting)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Delete", role: .destructive) {
+                        Task { await delete() }
+                    }
+                    .disabled(confirmation != "\(guest.vmid)" || isDeleting)
+                }
+            }
+            .overlay {
+                if isDeleting {
+                    ProgressView("Deleting…")
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func delete() async {
+        isDeleting = true
+        error = nil
+        do {
+            try await onDelete()
+            dismiss()
+            onDeleted()
+        } catch {
+            self.error = error.localizedDescription
+            isDeleting = false
         }
     }
 }
