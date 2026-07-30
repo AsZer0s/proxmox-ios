@@ -177,6 +177,78 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(config.networks.map(\.key), ["net3"])
     }
 
+    func testQEMUNetworkSettingsEditAdvancedFieldsAndPreserveUnknownValues() {
+        var settings = GuestNetworkSettings(
+            type: .qemu,
+            value: "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,firewall=1,rate=12.5,mtu=1500,queues=4,link_down=1,trunks=10;20,custom=value"
+        )
+
+        XCTAssertEqual(settings.macAddress, "AA:BB:CC:DD:EE:FF")
+        XCTAssertTrue(settings.firewall)
+        XCTAssertTrue(settings.linkDown)
+        XCTAssertTrue(settings.isValid)
+
+        settings.bridge = "vmbr1"
+        settings.rateLimit = "25"
+        settings.queues = "8"
+        settings.linkDown = false
+
+        XCTAssertEqual(
+            settings.encodedValue,
+            "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr1,firewall=1,rate=25,mtu=1500,queues=8,trunks=10;20,custom=value"
+        )
+    }
+
+    func testContainerNetworkSettingsEditIPAndAdvancedFields() {
+        var settings = GuestNetworkSettings(
+            type: .lxc,
+            value: "name=eth0,bridge=vmbr0,hwaddr=02:00:00:00:00:01,ip=dhcp,ip6=auto,firewall=1,rate=10,mtu=1450,type=veth,custom=value"
+        )
+
+        settings.ipv4Mode = .static
+        settings.ipv4Address = "192.168.20.10/24"
+        settings.ipv4Gateway = "192.168.20.1"
+
+        XCTAssertTrue(settings.isValid)
+        XCTAssertEqual(
+            settings.encodedValue,
+            "name=eth0,type=veth,hwaddr=02:00:00:00:00:01,bridge=vmbr0,firewall=1,rate=10,mtu=1450,ip=192.168.20.10/24,gw=192.168.20.1,ip6=auto,custom=value"
+        )
+    }
+
+    func testNetworkSettingsRejectInvalidAdvancedValues() {
+        var settings = GuestNetworkSettings(type: .qemu)
+        settings.macAddress = "not-a-mac"
+        XCTAssertFalse(settings.isValid)
+
+        settings.macAddress = "02:00:00:00:00:01"
+        settings.vlanTag = "4095"
+        XCTAssertFalse(settings.isValid)
+
+        settings.vlanTag = "20"
+        settings.queues = "-1"
+        XCTAssertFalse(settings.isValid)
+    }
+
+    func testCloudInitNetworkSettingsRoundTripAndValidation() {
+        var settings = CloudInitNetworkSettings(
+            index: 0,
+            value: "ip=dhcp,ip6=auto,custom=value"
+        )
+        XCTAssertEqual(settings.ipv4Mode, .dhcp)
+        XCTAssertEqual(settings.ipv6Mode, .automatic)
+
+        settings.ipv4Mode = .static
+        settings.ipv4Address = "10.0.10.25/24"
+        settings.ipv4Gateway = "10.0.10.1"
+
+        XCTAssertTrue(settings.isValid)
+        XCTAssertEqual(
+            settings.encodedValue,
+            "ip=10.0.10.25/24,gw=10.0.10.1,ip6=auto,custom=value"
+        )
+    }
+
     // MARK: - Task status
 
     func testTaskStatusOnlySucceedsWithOKExitStatus() {

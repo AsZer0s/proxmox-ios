@@ -17,6 +17,7 @@ struct VMDetailView: View {
     @State private var showingDeleteGuest = false
     @State private var showingCloneGuest = false
     @State private var showingHardwareEditor = false
+    @State private var showingCloudInitEditor = false
 
     var body: some View {
         List {
@@ -55,6 +56,14 @@ struct VMDetailView: View {
                                 showingHardwareEditor = true
                             } label: {
                                 Label("Edit Hardware", systemImage: "cpu")
+                            }
+                        }
+
+                        if canEditCloudInit {
+                            Button {
+                                showingCloudInitEditor = true
+                            } label: {
+                                Label("Cloud-Init", systemImage: "cloud")
                             }
                         }
 
@@ -204,6 +213,16 @@ struct VMDetailView: View {
                 .environmentObject(appState)
             }
         }
+        .sheet(isPresented: $showingCloudInitEditor) {
+            if let config = model.config {
+                CloudInitEditorView(guest: guest, config: config) {
+                    Task {
+                        await model.refresh(service: appState.service, guest: guest)
+                    }
+                }
+                .environmentObject(appState)
+            }
+        }
         .overlay {
             if model.isPerformingAction {
                 Color.black.opacity(0.1).ignoresSafeArea()
@@ -257,8 +276,14 @@ struct VMDetailView: View {
         )
     }
 
+    private var canEditCloudInit: Bool {
+        guest.type == .qemu &&
+        model.config != nil &&
+        appState.hasPrivilege("VM.Config.Cloudinit", for: guest.vmid)
+    }
+
     private var canManageGuest: Bool {
-        canEditGuest || canEditHardware || canCloneGuest || canDeleteGuest
+        canEditGuest || canEditHardware || canEditCloudInit || canCloneGuest || canDeleteGuest
     }
 
     @ViewBuilder

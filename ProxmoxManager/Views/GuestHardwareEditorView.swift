@@ -447,14 +447,31 @@ private struct GuestNetworkEditorView: View {
     let network: GuestHardwareNetwork?
     let onSaved: () async -> Void
 
-    @State private var model = "virtio"
-    @State private var interfaceName = "eth0"
-    @State private var bridge = "vmbr0"
-    @State private var vlanTag = ""
-    @State private var preservedComponents: [String] = []
-    @State private var macAddress: String?
+    @State private var settings: GuestNetworkSettings
     @State private var isSaving = false
     @State private var error: String?
+
+    init(
+        guest: ProxmoxVM,
+        config: GuestConfig,
+        network: GuestHardwareNetwork?,
+        onSaved: @escaping () async -> Void
+    ) {
+        self.guest = guest
+        self.config = config
+        self.network = network
+        self.onSaved = onSaved
+
+        let key = network?.key ?? (0..<32)
+            .map { "net\($0)" }
+            .first { !config.rawValues.keys.contains($0) }
+        let index = key.flatMap { Int($0.dropFirst("net".count)) } ?? 0
+        _settings = State(initialValue: GuestNetworkSettings(
+            type: guest.type,
+            value: network?.value,
+            interfaceName: "eth\(index)"
+        ))
+    }
 
     private var key: String? {
         if let network { return network.key }
@@ -463,10 +480,7 @@ private struct GuestNetworkEditorView: View {
     }
 
     private var canSave: Bool {
-        key != nil &&
-        !bridge.trimmed.isEmpty &&
-        (vlanTag.isEmpty || (Int(vlanTag).map { (1...4094).contains($0) } == true)) &&
-        (guest.type == .qemu || !interfaceName.trimmed.isEmpty)
+        key != nil && settings.isValid
     }
 
     var body: some View {
@@ -475,25 +489,61 @@ private struct GuestNetworkEditorView: View {
                 Section {
                     LabeledContent("Interface", value: key?.uppercased() ?? "—")
                     if guest.type == .qemu {
-                        Picker("Model", selection: $model) {
+                        Picker("Model", selection: $settings.model) {
                             Text("VirtIO").tag("virtio")
                             Text("Intel E1000").tag("e1000")
                             Text("VMware VMXNET3").tag("vmxnet3")
                             Text("Realtek RTL8139").tag("rtl8139")
                         }
                     } else {
-                        TextField("Interface Name", text: $interfaceName)
+                        TextField("Interface Name", text: $settings.interfaceName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
-                    TextField("Bridge", text: $bridge)
+                    TextField("Bridge", text: $settings.bridge)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    TextField("VLAN Tag (optional)", text: $vlanTag)
+                    TextField("VLAN Tag (optional)", text: $settings.vlanTag)
                         .keyboardType(.numberPad)
-                } footer: {
-                    Text("Existing IP, firewall, rate limit and advanced options are preserved.")
                 }
+
+                if guest.type == .lxc {
+                    containerIPSection
+                }
+
+                Section {
+                    TextField("MAC Address (optional)", text: $settings.macAddress)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                    Toggle("Firewall", isOn: $settings.firewall)
+                    Toggle("Disconnected", isOn: $settings.linkDown)
+                    TextField("Rate Limit (MB/s, optional)", text: $settings.rateLimit)
+                        .keyboardType(.decimalPad)
+                    TextField("MTU (optional)", text: $settings.mtu)
+                        .keyboardType(.numberPad)
+                    if guest.type == .qemu {
+                        TextField("Multiqueue (optional)", text: $settings.queues)
+                            .keyboardType(.numberPad)
+                    }
+                    TextField("VLAN Trunks (optional)", text: $settings.trunks)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("Advanced")
+                } footer: {
+                    Text("Use semicolons between VLAN trunk IDs.")
+                }
+
+                if !settings.isValid {
+                    Section {
+                        Label(
+                            "Check the MAC, IP/CIDR, gateway, VLAN, rate limit, MTU and queue values.",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .foregroundStyle(.orange)
+                    }
+                }
+
                 if let error {
                     Section {
                         Label(error, systemImage: "exclamationmark.triangle")
@@ -517,64 +567,44 @@ private struct GuestNetworkEditorView: View {
                 }
             }
             .overlay { if isSaving { ProgressView() } }
-            .task { parseExistingValue() }
         }
     }
 
-    private func parseExistingValue() {
-        guard let network else {
-            if guest.type == .lxc,
-               let key,
-               let index = Int(key.dropFirst("net".count)) {
-                interfaceName = "eth\(index)"
+    private var containerIPSection: some View {
+        Section {
+            Picker("IPv4 Configuration", selection: $settings.ipv4Mode) {
+                Text("No Configuration").tag(GuestNetworkSettings.IPMode.unspecified)
+                Text("DHCP").tag(GuestNetworkSettings.IPMode.dhcp)
+                Text("Static").tag(GuestNetworkSettings.IPMode.static)
+                Text("Manual").tag(GuestNetworkSettings.IPMode.manual)
             }
-            return
-        }
-        var components = network.value.split(separator: ",").map(String.init)
-        if guest.type == .qemu {
-            if let first = components.first {
-                let pair = first.split(separator: "=", maxSplits: 1).map(String.init)
-                model = pair[0]
-                macAddress = pair.count > 1 ? pair[1] : nil
-                components.removeFirst()
+            if settings.ipv4Mode == .static {
+                TextField("IPv4 Address / CIDR", text: $settings.ipv4Address)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("IPv4 Gateway (optional)", text: $settings.ipv4Gateway)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             }
-            bridge = value(for: "bridge", in: components) ?? bridge
-        } else {
-            interfaceName = value(for: "name", in: components) ?? interfaceName
-            bridge = value(for: "bridge", in: components) ?? bridge
-        }
-        vlanTag = value(for: "tag", in: components) ?? ""
-        let replaced = guest.type == .qemu
-            ? Set(["bridge", "tag"])
-            : Set(["name", "bridge", "tag", "type"])
-        preservedComponents = components.filter {
-            guard let key = $0.split(separator: "=", maxSplits: 1).first else { return true }
-            return !replaced.contains(String(key))
-        }
-    }
 
-    private func value(for key: String, in components: [String]) -> String? {
-        components.first(where: { $0.hasPrefix("\(key)=") })
-            .map { String($0.dropFirst(key.count + 1)) }
-    }
-
-    private func encodedValue() -> String {
-        var components: [String]
-        if guest.type == .qemu {
-            components = [macAddress.map { "\(model)=\($0)" } ?? model]
-            components.append("bridge=\(bridge.trimmed)")
-        } else {
-            components = [
-                "name=\(interfaceName.trimmed)",
-                "bridge=\(bridge.trimmed)",
-                "type=veth",
-            ]
+            Picker("IPv6 Configuration", selection: $settings.ipv6Mode) {
+                Text("No Configuration").tag(GuestNetworkSettings.IPMode.unspecified)
+                Text("Automatic").tag(GuestNetworkSettings.IPMode.automatic)
+                Text("DHCP").tag(GuestNetworkSettings.IPMode.dhcp)
+                Text("Static").tag(GuestNetworkSettings.IPMode.static)
+                Text("Manual").tag(GuestNetworkSettings.IPMode.manual)
+            }
+            if settings.ipv6Mode == .static {
+                TextField("IPv6 Address / CIDR", text: $settings.ipv6Address)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("IPv6 Gateway (optional)", text: $settings.ipv6Gateway)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+        } header: {
+            Text("IP Configuration")
         }
-        if !vlanTag.isEmpty {
-            components.append("tag=\(vlanTag)")
-        }
-        components.append(contentsOf: preservedComponents)
-        return components.joined(separator: ",")
     }
 
     @MainActor
@@ -588,7 +618,7 @@ private struct GuestNetworkEditorView: View {
                 node: guest.node,
                 type: guest.type,
                 vmid: guest.vmid,
-                form: [key: encodedValue()]
+                form: [key: settings.encodedValue]
             )
             await onSaved()
             dismiss()

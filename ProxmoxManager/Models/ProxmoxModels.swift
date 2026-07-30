@@ -614,6 +614,381 @@ struct GuestHardwareNetwork: Identifiable, Hashable {
     var id: String { key }
 }
 
+struct GuestNetworkSettings: Equatable {
+    enum IPMode: String, CaseIterable, Identifiable {
+        case unspecified
+        case dhcp
+        case automatic
+        case manual
+        case `static`
+
+        var id: String { rawValue }
+    }
+
+    let type: GuestType
+    var model = "virtio"
+    var interfaceName: String
+    var bridge = "vmbr0"
+    var vlanTag = ""
+    var macAddress = ""
+    var firewall = false
+    var rateLimit = ""
+    var mtu = ""
+    var queues = ""
+    var linkDown = false
+    var trunks = ""
+    var ipv4Mode: IPMode = .unspecified
+    var ipv4Address = ""
+    var ipv4Gateway = ""
+    var ipv6Mode: IPMode = .unspecified
+    var ipv6Address = ""
+    var ipv6Gateway = ""
+    private var preservedComponents: [String] = []
+
+    init(type: GuestType, value: String? = nil, interfaceName: String = "eth0") {
+        self.type = type
+        self.interfaceName = interfaceName
+
+        guard let value, !value.isEmpty else {
+            if type == .lxc {
+                ipv4Mode = .dhcp
+                ipv6Mode = .automatic
+            }
+            return
+        }
+
+        var components = value.split(separator: ",").map(String.init)
+        if type == .qemu, let first = components.first {
+            let pair = first.split(separator: "=", maxSplits: 1).map(String.init)
+            let knownModels = Set(["e1000", "e1000e", "e1000-82540em", "e1000-82544gc", "e1000-82545em",
+                                   "i82551", "i82557b", "i82559er", "ne2k_isa", "ne2k_pci",
+                                   "pcnet", "rtl8139", "virtio", "vmxnet3"])
+            if knownModels.contains(pair[0]) {
+                model = pair[0]
+                if pair.count > 1 {
+                    macAddress = pair[1]
+                }
+                components.removeFirst()
+            }
+        }
+
+        if type == .qemu {
+            model = Self.value(for: "model", in: components) ?? model
+            if macAddress.isEmpty {
+                macAddress = Self.value(for: "macaddr", in: components) ?? ""
+            }
+        } else {
+            self.interfaceName = Self.value(for: "name", in: components) ?? interfaceName
+            macAddress = Self.value(for: "hwaddr", in: components) ?? ""
+        }
+
+        bridge = Self.value(for: "bridge", in: components) ?? bridge
+        vlanTag = Self.value(for: "tag", in: components) ?? ""
+        firewall = Self.value(for: "firewall", in: components) == "1"
+        rateLimit = Self.value(for: "rate", in: components) ?? ""
+        mtu = Self.value(for: "mtu", in: components) ?? ""
+        queues = Self.value(for: "queues", in: components) ?? ""
+        linkDown = Self.value(for: "link_down", in: components) == "1"
+        trunks = Self.value(for: "trunks", in: components) ?? ""
+
+        if type == .lxc {
+            (ipv4Mode, ipv4Address) = Self.parseAddress(
+                Self.value(for: "ip", in: components),
+                supportsAutomatic: false
+            )
+            ipv4Gateway = Self.value(for: "gw", in: components) ?? ""
+            (ipv6Mode, ipv6Address) = Self.parseAddress(
+                Self.value(for: "ip6", in: components),
+                supportsAutomatic: true
+            )
+            ipv6Gateway = Self.value(for: "gw6", in: components) ?? ""
+        }
+
+        let exposed = type == .qemu
+            ? Set(["model", "macaddr", "bridge", "tag", "firewall", "rate", "mtu",
+                   "queues", "link_down", "trunks"])
+            : Set(["name", "type", "hwaddr", "bridge", "tag", "firewall", "rate", "mtu",
+                   "link_down", "trunks", "ip", "gw", "ip6", "gw6"])
+        preservedComponents = components.filter {
+            guard let key = $0.split(separator: "=", maxSplits: 1).first else { return true }
+            return !exposed.contains(String(key))
+        }
+    }
+
+    var isValid: Bool {
+        !bridge.trimmed.isEmpty &&
+        (type == .qemu || !interfaceName.trimmed.isEmpty) &&
+        Self.isValidMAC(macAddress) &&
+        Self.isValidInteger(vlanTag, range: 1...4094) &&
+        Self.isValidNonnegativeDecimal(rateLimit) &&
+        Self.isValidInteger(mtu, range: type == .qemu ? 1...65520 : 64...65535) &&
+        (type == .lxc || Self.isValidInteger(queues, range: 0...64)) &&
+        Self.isValidVLANTrunks(trunks) &&
+        (type == .qemu || isValidContainerAddresses)
+    }
+
+    var encodedValue: String {
+        var components: [String]
+        if type == .qemu {
+            components = [macAddress.trimmed.isEmpty
+                ? model
+                : "\(model)=\(macAddress.trimmed.uppercased())"]
+        } else {
+            components = [
+                "name=\(interfaceName.trimmed)",
+                "type=veth",
+            ]
+            if !macAddress.trimmed.isEmpty {
+                components.append("hwaddr=\(macAddress.trimmed.uppercased())")
+            }
+        }
+
+        components.append("bridge=\(bridge.trimmed)")
+        Self.append("tag", value: vlanTag, to: &components)
+        if firewall { components.append("firewall=1") }
+        Self.append("rate", value: rateLimit, to: &components)
+        Self.append("mtu", value: mtu, to: &components)
+        if type == .qemu {
+            Self.append("queues", value: queues, to: &components)
+        }
+        if linkDown { components.append("link_down=1") }
+        Self.append("trunks", value: trunks, to: &components)
+
+        if type == .lxc {
+            Self.appendAddress("ip", mode: ipv4Mode, address: ipv4Address, to: &components)
+            if ipv4Mode == .static {
+                Self.append("gw", value: ipv4Gateway, to: &components)
+            }
+            Self.appendAddress("ip6", mode: ipv6Mode, address: ipv6Address, to: &components)
+            if ipv6Mode == .static {
+                Self.append("gw6", value: ipv6Gateway, to: &components)
+            }
+        }
+
+        components.append(contentsOf: preservedComponents)
+        return components.joined(separator: ",")
+    }
+
+    private var isValidContainerAddresses: Bool {
+        let ipv4Valid = ipv4Mode != .automatic &&
+            (ipv4Mode != .static || Self.isValidCIDR(ipv4Address, ipv6: false)) &&
+            (ipv4Mode != .static || ipv4Gateway.trimmed.isEmpty ||
+                Self.isValidIPAddress(ipv4Gateway, ipv6: false))
+        let ipv6Valid =
+            (ipv6Mode != .static || Self.isValidCIDR(ipv6Address, ipv6: true)) &&
+            (ipv6Mode != .static || ipv6Gateway.trimmed.isEmpty ||
+                Self.isValidIPAddress(ipv6Gateway, ipv6: true))
+        return ipv4Valid && ipv6Valid
+    }
+
+    private static func parseAddress(
+        _ value: String?,
+        supportsAutomatic: Bool
+    ) -> (IPMode, String) {
+        guard let value, !value.isEmpty else { return (.unspecified, "") }
+        switch value {
+        case "dhcp": return (.dhcp, "")
+        case "auto" where supportsAutomatic: return (.automatic, "")
+        case "manual": return (.manual, "")
+        default: return (.static, value)
+        }
+    }
+
+    private static func value(for key: String, in components: [String]) -> String? {
+        components.first(where: { $0.hasPrefix("\(key)=") })
+            .map { String($0.dropFirst(key.count + 1)) }
+    }
+
+    private static func append(_ key: String, value: String, to components: inout [String]) {
+        let value = value.trimmed
+        if !value.isEmpty {
+            components.append("\(key)=\(value)")
+        }
+    }
+
+    private static func appendAddress(
+        _ key: String,
+        mode: IPMode,
+        address: String,
+        to components: inout [String]
+    ) {
+        switch mode {
+        case .unspecified:
+            break
+        case .dhcp:
+            components.append("\(key)=dhcp")
+        case .automatic:
+            components.append("\(key)=auto")
+        case .manual:
+            components.append("\(key)=manual")
+        case .static:
+            append(key, value: address, to: &components)
+        }
+    }
+
+    private static func isValidMAC(_ value: String) -> Bool {
+        value.trimmed.isEmpty ||
+        value.trimmed.range(
+            of: #"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func isValidNonnegativeDecimal(_ value: String) -> Bool {
+        value.trimmed.isEmpty || (Double(value.trimmed).map { $0 >= 0 } == true)
+    }
+
+    private static func isValidInteger(_ value: String, range: ClosedRange<Int>) -> Bool {
+        value.trimmed.isEmpty || (Int(value.trimmed).map(range.contains) == true)
+    }
+
+    private static func isValidVLANTrunks(_ value: String) -> Bool {
+        value.trimmed.isEmpty || value.split(separator: ";").allSatisfy {
+            Int($0).map { (1...4094).contains($0) } == true
+        }
+    }
+
+    private static func isValidCIDR(_ value: String, ipv6: Bool) -> Bool {
+        let pieces = value.trimmed.split(separator: "/", maxSplits: 1).map(String.init)
+        guard pieces.count == 2,
+              isValidIPAddress(pieces[0], ipv6: ipv6),
+              let prefix = Int(pieces[1]) else {
+            return false
+        }
+        return (ipv6 ? 0...128 : 0...32).contains(prefix)
+    }
+
+    private static func isValidIPAddress(_ value: String, ipv6: Bool) -> Bool {
+        let value = value.trimmed
+        if ipv6 {
+            return value.contains(":") &&
+                value.range(of: #"^[0-9A-Fa-f:.]+$"#, options: .regularExpression) != nil
+        }
+        let octets = value.split(separator: ".", omittingEmptySubsequences: false)
+        return octets.count == 4 && octets.allSatisfy {
+            guard let number = Int($0) else { return false }
+            return (0...255).contains(number)
+        }
+    }
+}
+
+struct CloudInitNetworkSettings: Identifiable, Equatable {
+    let index: Int
+    var ipv4Mode: GuestNetworkSettings.IPMode = .unspecified
+    var ipv4Address = ""
+    var ipv4Gateway = ""
+    var ipv6Mode: GuestNetworkSettings.IPMode = .unspecified
+    var ipv6Address = ""
+    var ipv6Gateway = ""
+    private var preservedComponents: [String] = []
+
+    var id: Int { index }
+
+    init(index: Int, value: String?) {
+        self.index = index
+        guard let value, !value.isEmpty else { return }
+        let components = value.split(separator: ",").map(String.init)
+        (ipv4Mode, ipv4Address) = Self.parseAddress(Self.value(for: "ip", in: components), ipv6: false)
+        ipv4Gateway = Self.value(for: "gw", in: components) ?? ""
+        (ipv6Mode, ipv6Address) = Self.parseAddress(Self.value(for: "ip6", in: components), ipv6: true)
+        ipv6Gateway = Self.value(for: "gw6", in: components) ?? ""
+        let exposed = Set(["ip", "gw", "ip6", "gw6"])
+        preservedComponents = components.filter {
+            guard let key = $0.split(separator: "=", maxSplits: 1).first else { return true }
+            return !exposed.contains(String(key))
+        }
+    }
+
+    var encodedValue: String? {
+        var components: [String] = []
+        Self.appendAddress("ip", mode: ipv4Mode, address: ipv4Address, to: &components)
+        if ipv4Mode == .static {
+            Self.append("gw", value: ipv4Gateway, to: &components)
+        }
+        Self.appendAddress("ip6", mode: ipv6Mode, address: ipv6Address, to: &components)
+        if ipv6Mode == .static {
+            Self.append("gw6", value: ipv6Gateway, to: &components)
+        }
+        components.append(contentsOf: preservedComponents)
+        return components.isEmpty ? nil : components.joined(separator: ",")
+    }
+
+    var isValid: Bool {
+        ipv4Mode != .automatic &&
+        (ipv4Mode != .static || Self.isValidCIDR(ipv4Address, ipv6: false)) &&
+        (ipv4Mode != .static || ipv4Gateway.trimmed.isEmpty ||
+            Self.isValidIPAddress(ipv4Gateway, ipv6: false)) &&
+        (ipv6Mode != .static || Self.isValidCIDR(ipv6Address, ipv6: true)) &&
+        (ipv6Mode != .static || ipv6Gateway.trimmed.isEmpty ||
+            Self.isValidIPAddress(ipv6Gateway, ipv6: true))
+    }
+
+    private static func parseAddress(
+        _ value: String?,
+        ipv6: Bool
+    ) -> (GuestNetworkSettings.IPMode, String) {
+        guard let value, !value.isEmpty else { return (.unspecified, "") }
+        switch value {
+        case "dhcp": return (.dhcp, "")
+        case "auto" where ipv6: return (.automatic, "")
+        default: return (.static, value)
+        }
+    }
+
+    private static func value(for key: String, in components: [String]) -> String? {
+        components.first(where: { $0.hasPrefix("\(key)=") })
+            .map { String($0.dropFirst(key.count + 1)) }
+    }
+
+    private static func append(_ key: String, value: String, to components: inout [String]) {
+        let value = value.trimmed
+        if !value.isEmpty {
+            components.append("\(key)=\(value)")
+        }
+    }
+
+    private static func appendAddress(
+        _ key: String,
+        mode: GuestNetworkSettings.IPMode,
+        address: String,
+        to components: inout [String]
+    ) {
+        switch mode {
+        case .unspecified, .manual:
+            break
+        case .dhcp:
+            components.append("\(key)=dhcp")
+        case .automatic:
+            components.append("\(key)=auto")
+        case .static:
+            append(key, value: address, to: &components)
+        }
+    }
+
+    private static func isValidCIDR(_ value: String, ipv6: Bool) -> Bool {
+        let pieces = value.trimmed.split(separator: "/", maxSplits: 1).map(String.init)
+        guard pieces.count == 2,
+              isValidIPAddress(pieces[0], ipv6: ipv6),
+              let prefix = Int(pieces[1]) else {
+            return false
+        }
+        return (ipv6 ? 0...128 : 0...32).contains(prefix)
+    }
+
+    private static func isValidIPAddress(_ value: String, ipv6: Bool) -> Bool {
+        let value = value.trimmed
+        if ipv6 {
+            return value.contains(":") &&
+                value.range(of: #"^[0-9A-Fa-f:.]+$"#, options: .regularExpression) != nil
+        }
+        let octets = value.split(separator: ".", omittingEmptySubsequences: false)
+        return octets.count == 4 && octets.allSatisfy {
+            guard let number = Int($0) else { return false }
+            return (0...255).contains(number)
+        }
+    }
+}
+
 struct GuestSnapshot: Codable, Hashable, Identifiable {
     let name: String
     let description: String?
