@@ -39,6 +39,8 @@ struct GuestEditorView: View {
     @State private var loadingResourcesForNode: String?
     @State private var isSaving = false
     @State private var error: String?
+    @State private var showingMediaManager = false
+    @State private var pendingInstallationVolume: String?
 
     init(mode: Mode, onSaved: @escaping () -> Void) {
         self.mode = mode
@@ -212,6 +214,17 @@ struct GuestEditorView: View {
             .onChange(of: selectedType) { _ in
                 selectCompatibleDefaults()
             }
+            .sheet(isPresented: $showingMediaManager) {
+                InstallationMediaManagerView(
+                    node: selectedNode,
+                    type: selectedType,
+                    storages: storages
+                ) { volid in
+                    pendingInstallationVolume = volid
+                    Task { await refreshInstallationMediaAfterDownload() }
+                }
+                .environmentObject(appState)
+            }
         }
     }
 
@@ -290,6 +303,11 @@ struct GuestEditorView: View {
                         Text(item.displayName).tag(item.volid)
                     }
                 }
+                Button {
+                    showingMediaManager = true
+                } label: {
+                    Label("Import ISO from URL", systemImage: "square.and.arrow.down")
+                }
             } else {
                 Picker("Container Template", selection: $selectedInstallationVolume) {
                     ForEach(compatibleMedia) { item in
@@ -302,6 +320,11 @@ struct GuestEditorView: View {
                     .foregroundStyle(.secondary)
                 Toggle("Unprivileged container", isOn: $unprivileged)
                     .disabled(!appState.hasPrivilege("Sys.Modify", on: "/") && unprivileged)
+                Button {
+                    showingMediaManager = true
+                } label: {
+                    Label("Browse and download templates", systemImage: "square.and.arrow.down")
+                }
 
                 if compatibleMedia.isEmpty, !isLoading {
                     Text("No accessible container template was found on this node.")
@@ -456,6 +479,16 @@ struct GuestEditorView: View {
             if memoryMiBText == "512" { memoryMiBText = "2048" }
             if diskSizeGiBText == "8" { diskSizeGiBText = "32" }
         }
+    }
+
+    @MainActor
+    private func refreshInstallationMediaAfterDownload() async {
+        await loadNodeResources(node: selectedNode)
+        if let pendingInstallationVolume,
+           compatibleMedia.contains(where: { $0.volid == pendingInstallationVolume }) {
+            selectedInstallationVolume = pendingInstallationVolume
+        }
+        pendingInstallationVolume = nil
     }
 
     @MainActor

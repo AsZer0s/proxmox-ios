@@ -739,6 +739,27 @@ struct ProxmoxStorageContent: Codable, Identifiable, Hashable {
     }
 }
 
+struct ApplianceTemplate: Codable, Identifiable, Hashable {
+    let template: String
+    let type: String?
+    let package: String?
+    let version: String?
+    let headline: String?
+    let infopage: String?
+    let description: String?
+    let os: String?
+    let section: String?
+
+    var id: String { template }
+
+    var displayName: String {
+        if let package, !package.isEmpty {
+            return package
+        }
+        return template
+    }
+}
+
 private extension KeyedDecodingContainer {
     func decodeFlexibleInt(forKey key: Key) -> Int? {
         if let value = try? decode(Int.self, forKey: key) {

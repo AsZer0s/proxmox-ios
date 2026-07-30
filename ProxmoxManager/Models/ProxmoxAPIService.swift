@@ -26,6 +26,14 @@ enum ProxmoxEndpoint {
         return path
     }
 
+    static func appliances(node: String) -> String {
+        "/nodes/\(node)/aplinfo"
+    }
+
+    static func storageDownload(node: String, storage: String) -> String {
+        "/nodes/\(node)/storage/\(storage.pathEscaped)/download-url"
+    }
+
     static func backupArchives(node: String, storage: String) -> String {
         "/nodes/\(node)/storage/\(storage.pathEscaped)/content?content=backup"
     }
@@ -470,6 +478,59 @@ actor ProxmoxAPIService {
             }
         }
         return items
+    }
+
+    func fetchApplianceTemplates(node: String) async throws -> [ApplianceTemplate] {
+        try await get(ProxmoxEndpoint.appliances(node: node), as: [ApplianceTemplate].self)
+            .sorted {
+                if ($0.section ?? "") != ($1.section ?? "") {
+                    return ($0.section ?? "") < ($1.section ?? "")
+                }
+                return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+            }
+    }
+
+    @discardableResult
+    func downloadApplianceTemplate(
+        node: String,
+        storage: String,
+        template: String
+    ) async throws -> String {
+        try await post(
+            ProxmoxEndpoint.appliances(node: node),
+            form: [
+                "storage": storage,
+                "template": template,
+            ]
+        )
+    }
+
+    @discardableResult
+    func downloadStorageContent(
+        node: String,
+        storage: String,
+        content: String,
+        url: String,
+        filename: String,
+        checksum: String? = nil,
+        checksumAlgorithm: String? = nil,
+        verifyCertificates: Bool = true
+    ) async throws -> String {
+        var form = [
+            "content": content,
+            "url": url,
+            "filename": filename,
+            "verify-certificates": verifyCertificates ? "1" : "0",
+        ]
+        if let checksum, !checksum.isEmpty,
+           let checksumAlgorithm, !checksumAlgorithm.isEmpty {
+            form["checksum"] = checksum
+            form["checksum-algorithm"] = checksumAlgorithm
+        }
+        return try await post(
+            ProxmoxEndpoint.storageDownload(node: node, storage: storage),
+            form: form
+        )
     }
 
     // MARK: Backups

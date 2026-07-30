@@ -469,6 +469,25 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(content.ctime, 1_785_369_600)
     }
 
+    func testApplianceTemplateDecodesOfficialFields() throws {
+        let data = Data(#"""
+        {
+          "template": "debian-13-standard_13.0-1_amd64.tar.zst",
+          "type": "lxc",
+          "package": "debian-13-standard",
+          "version": "13.0-1",
+          "headline": "Debian 13 standard",
+          "os": "debian",
+          "section": "system"
+        }
+        """#.utf8)
+
+        let template = try JSONDecoder().decode(ApplianceTemplate.self, from: data)
+        XCTAssertEqual(template.id, "debian-13-standard_13.0-1_amd64.tar.zst")
+        XCTAssertEqual(template.displayName, "debian-13-standard")
+        XCTAssertEqual(template.section, "system")
+    }
+
     // MARK: - Official permission response shape
 
     func testPermissionsDecodeOfficialShapeAndInheritance() throws {
@@ -516,6 +535,11 @@ final class ProxmoxManagerTests: XCTestCase {
                 content: "vztmpl"
             ),
             "/nodes/pve1/storage/local%2Ftemplates/content?content=vztmpl"
+        )
+        XCTAssertEqual(ProxmoxEndpoint.appliances(node: "pve1"), "/nodes/pve1/aplinfo")
+        XCTAssertEqual(
+            ProxmoxEndpoint.storageDownload(node: "pve1", storage: "local/iso"),
+            "/nodes/pve1/storage/local%2Fiso/download-url"
         )
     }
 
