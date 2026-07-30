@@ -22,6 +22,10 @@ enum ProxmoxEndpoint {
         "\(guest(node: node, type: type, vmid: vmid))/clone"
     }
 
+    static func guestResize(node: String, type: GuestType, vmid: Int) -> String {
+        "\(guest(node: node, type: type, vmid: vmid))/resize"
+    }
+
     static func storageContent(node: String, storage: String, content: String? = nil) -> String {
         var path = "/nodes/\(node)/storage/\(storage.pathEscaped)/content"
         if let content, !content.isEmpty {
@@ -361,6 +365,23 @@ actor ProxmoxAPIService {
         )
     }
 
+    @discardableResult
+    func resizeGuestDisk(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        disk: String,
+        growGiB: Int
+    ) async throws -> String {
+        try await put(
+            ProxmoxEndpoint.guestResize(node: node, type: type, vmid: vmid),
+            form: [
+                "disk": disk,
+                "size": "+\(growGiB)G",
+            ]
+        )
+    }
+
     func fetchSnapshots(node: String, type: GuestType, vmid: Int) async throws -> [GuestSnapshot] {
         try await get("/nodes/\(node)/\(type.apiPath)/\(vmid)/snapshot", as: [GuestSnapshot].self)
             .filter { !$0.isCurrent }
@@ -695,7 +716,7 @@ actor ProxmoxAPIService {
         return (data, response)
     }
 
-    private func get<T: Codable>(_ path: String, as type: T.Type) async throws -> T {
+    private func get<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
         guard server.authMethod == .token || ticket != nil else { throw ProxmoxError.notAuthenticated }
         guard let url = URL(string: server.baseURL + path) else { throw ProxmoxError.invalidURL }
 

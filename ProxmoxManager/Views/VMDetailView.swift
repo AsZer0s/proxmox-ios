@@ -16,6 +16,7 @@ struct VMDetailView: View {
     @State private var showingEditGuest = false
     @State private var showingDeleteGuest = false
     @State private var showingCloneGuest = false
+    @State private var showingHardwareEditor = false
 
     var body: some View {
         List {
@@ -46,6 +47,14 @@ struct VMDetailView: View {
                                 showingCloneGuest = true
                             } label: {
                                 Label("Clone Guest", systemImage: "square.on.square")
+                            }
+                        }
+
+                        if canEditHardware {
+                            Button {
+                                showingHardwareEditor = true
+                            } label: {
+                                Label("Edit Hardware", systemImage: "cpu")
                             }
                         }
 
@@ -185,6 +194,16 @@ struct VMDetailView: View {
             CloneGuestView(guest: guest) {}
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $showingHardwareEditor) {
+            if let config = model.config {
+                GuestHardwareEditorView(guest: guest, config: config) {
+                    Task {
+                        await model.refresh(service: appState.service, guest: guest)
+                    }
+                }
+                .environmentObject(appState)
+            }
+        }
         .overlay {
             if model.isPerformingAction {
                 Color.black.opacity(0.1).ignoresSafeArea()
@@ -231,8 +250,15 @@ struct VMDetailView: View {
         appState.hasPrivilege("VM.Clone", for: guest.vmid)
     }
 
+    private var canEditHardware: Bool {
+        model.config != nil && appState.hasAnyPrivilege(
+            ["VM.Config.Disk", "VM.Config.Network"],
+            for: guest.vmid
+        )
+    }
+
     private var canManageGuest: Bool {
-        canEditGuest || canCloneGuest || canDeleteGuest
+        canEditGuest || canEditHardware || canCloneGuest || canDeleteGuest
     }
 
     @ViewBuilder

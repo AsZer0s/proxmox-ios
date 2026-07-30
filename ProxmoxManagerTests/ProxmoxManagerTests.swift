@@ -157,6 +157,26 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertNil(config.net0)
     }
 
+    func testGuestConfigCapturesDynamicHardwareEntries() throws {
+        let data = Data(#"""
+        {
+          "rootfs": "local-lvm:vm-200-disk-0,size=8G",
+          "mp2": "local-lvm:vm-200-disk-1,mp=/data,size=16G",
+          "scsi1": "local-lvm:vm-100-disk-1,size=32G",
+          "ide2": "local:iso/debian.iso,media=cdrom",
+          "net3": "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,tag=20"
+        }
+        """#.utf8)
+
+        let config = try JSONDecoder().decode(GuestConfig.self, from: data)
+
+        XCTAssertEqual(config.rawValues["scsi1"], "local-lvm:vm-100-disk-1,size=32G")
+        XCTAssertEqual(config.disks(for: .qemu).map(\.key), ["scsi1"])
+        XCTAssertEqual(config.disks(for: .qemu).first?.size, "32G")
+        XCTAssertEqual(config.disks(for: .lxc).map(\.key), ["mp2", "rootfs"])
+        XCTAssertEqual(config.networks.map(\.key), ["net3"])
+    }
+
     // MARK: - Task status
 
     func testTaskStatusOnlySucceedsWithOKExitStatus() {
@@ -531,6 +551,10 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(
             ProxmoxEndpoint.guestClone(node: "pve1", type: .lxc, vmid: 220),
             "/nodes/pve1/lxc/220/clone"
+        )
+        XCTAssertEqual(
+            ProxmoxEndpoint.guestResize(node: "pve1", type: .qemu, vmid: 120),
+            "/nodes/pve1/qemu/120/resize"
         )
         XCTAssertEqual(
             ProxmoxEndpoint.storageContent(

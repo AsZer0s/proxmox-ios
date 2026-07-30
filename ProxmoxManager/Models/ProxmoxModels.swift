@@ -135,7 +135,7 @@ struct ProxmoxTicketPayload: Codable {
 }
 
 /// Generic Proxmox response envelope. Every endpoint wraps its payload in `data`.
-struct ProxmoxResponse<T: Codable>: Codable {
+struct ProxmoxResponse<T: Decodable>: Decodable {
     let data: T
 }
 
@@ -433,7 +433,7 @@ struct VMStatus: Codable, Hashable {
     var isRunning: Bool { status.lowercased() == "running" }
 }
 
-struct GuestConfig: Codable, Hashable {
+struct GuestConfig: Decodable, Hashable {
     let name: String?
     let hostname: String?
     let description: String?
@@ -457,6 +457,7 @@ struct GuestConfig: Codable, Hashable {
     let net1: String?
     let mp0: String?
     let mp1: String?
+    let rawValues: [String: String]
 
     enum CodingKeys: String, CodingKey {
         case name, hostname, description, tags, cores, sockets, vcpus, memory, swap
@@ -489,6 +490,21 @@ struct GuestConfig: Codable, Hashable {
         net1 = try container.decodeIfPresent(String.self, forKey: .net1)
         mp0 = try container.decodeIfPresent(String.self, forKey: .mp0)
         mp1 = try container.decodeIfPresent(String.self, forKey: .mp1)
+
+        let rawContainer = try decoder.container(keyedBy: DynamicCodingKey.self)
+        var values: [String: String] = [:]
+        for key in rawContainer.allKeys {
+            if let value = try? rawContainer.decode(String.self, forKey: key) {
+                values[key.stringValue] = value
+            } else if let value = try? rawContainer.decode(Int64.self, forKey: key) {
+                values[key.stringValue] = String(value)
+            } else if let value = try? rawContainer.decode(Double.self, forKey: key) {
+                values[key.stringValue] = String(value)
+            } else if let value = try? rawContainer.decode(Bool.self, forKey: key) {
+                values[key.stringValue] = value ? "1" : "0"
+            }
+        }
+        rawValues = values
     }
 
     private static func decodeString(
@@ -529,6 +545,73 @@ struct GuestConfig: Codable, Hashable {
         }
         return nil
     }
+}
+
+private struct DynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        self.intValue = nil
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = String(intValue)
+        self.intValue = intValue
+    }
+}
+
+struct GuestHardwareDisk: Identifiable, Hashable {
+    let key: String
+    let value: String
+
+    var id: String { key }
+
+    var size: String? {
+        guard let component = value.split(separator: ",")
+            .map(String.init)
+            .first(where: { $0.hasPrefix("size=") }) else {
+            return nil
+        }
+        return String(component.dropFirst("size=".count))
+    }
+}
+
+extension GuestConfig {
+    func disks(for type: GuestType) -> [GuestHardwareDisk] {
+        rawValues.compactMap { key, value in
+            let isDisk: Bool
+            if type == .qemu {
+                isDisk = key.range(
+                    of: #"^(scsi|virtio|sata|ide)\d+$"#,
+                    options: .regularExpression
+                ) != nil && !value.contains("media=cdrom")
+            } else {
+                isDisk = key == "rootfs" ||
+                    key.range(of: #"^mp\d+$"#, options: .regularExpression) != nil
+            }
+            return isDisk ? GuestHardwareDisk(key: key, value: value) : nil
+        }
+        .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+
+    var networks: [GuestHardwareNetwork] {
+        rawValues.compactMap { key, value in
+            guard key.range(of: #"^net\d+$"#, options: .regularExpression) != nil else {
+                return nil
+            }
+            return GuestHardwareNetwork(key: key, value: value)
+        }
+        .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+}
+
+struct GuestHardwareNetwork: Identifiable, Hashable {
+    let key: String
+    let value: String
+
+    var id: String { key }
 }
 
 struct GuestSnapshot: Codable, Hashable, Identifiable {
