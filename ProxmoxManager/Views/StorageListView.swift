@@ -104,6 +104,9 @@ struct StorageDetailView: View {
     @State private var content: [ProxmoxStorageContent] = []
     @State private var status: ProxmoxStorageStatus?
     @State private var isLoading = true
+    @State private var isWorking = false
+    @State private var error: String?
+    @State private var deletingItem: ProxmoxStorageContent?
 
     let node: String
     let storage: ProxmoxStorage
@@ -151,25 +154,142 @@ struct StorageDetailView: View {
                             .foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 4)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if canDelete(item) {
+                                Button(role: .destructive) {
+                                    deletingItem = item
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            if item.content == "backup", canManageBackup(item) {
+                                Button {
+                                    Task { await toggleProtection(item) }
+                                } label: {
+                                    Label(
+                                        item.protectedFlag == 1 ? "Unprotect" : "Protect",
+                                        systemImage: item.protectedFlag == 1 ? "lock.open" : "lock"
+                                    )
+                                }
+                                .tint(.orange)
+                            }
+                        }
                     }
                 }
             } header: {
                 Text("Content (\(content.count))")
             }
+
+            if let error {
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                }
+            }
         }
         .listStyle(.insetGrouped)
         .navigationTitle(storage.storage)
         .task { await load() }
+        .refreshable { await load() }
+        .confirmationDialog(
+            "Delete Storage Content?",
+            isPresented: Binding(
+                get: { deletingItem != nil },
+                set: { if !$0 { deletingItem = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let item = deletingItem else { return }
+                Task { await delete(item) }
+            }
+        } message: {
+            Text("This content will be permanently removed from storage.")
+        }
+        .overlay {
+            if isWorking {
+                Color.black.opacity(0.08).ignoresSafeArea()
+                ProgressView()
+            }
+        }
+    }
+
+    private func canDelete(_ item: ProxmoxStorageContent) -> Bool {
+        let path = "/storage/\(storage.storage)"
+        if appState.hasPrivilege("Datastore.Allocate", on: path) {
+            return true
+        }
+        return item.content == "backup" &&
+            appState.hasPrivilege("Datastore.AllocateSpace", on: path) &&
+            appState.hasPrivilege("VM.Backup", for: item.vmid ?? 0)
+    }
+
+    private func canManageBackup(_ item: ProxmoxStorageContent) -> Bool {
+        let path = "/storage/\(storage.storage)"
+        return appState.hasPrivilege("Datastore.Allocate", on: path) ||
+            (appState.hasPrivilege("Datastore.AllocateSpace", on: path) &&
+             appState.hasPrivilege("VM.Backup", for: item.vmid ?? 0))
     }
 
     private func load() async {
         guard let service = appState.service else { return }
         isLoading = true
+        error = nil
         async let contentTask = service.fetchStorageContent(node: node, storage: storage.storage)
         async let statusTask = service.fetchStorageStatus(node: node, storage: storage.storage)
         content = (try? await contentTask) ?? []
         status = try? await statusTask
         isLoading = false
+    }
+
+    @MainActor
+    private func toggleProtection(_ item: ProxmoxStorageContent) async {
+        guard let service = appState.service else { return }
+        isWorking = true
+        error = nil
+        defer { isWorking = false }
+        do {
+            try await service.updateStorageContent(
+                node: node,
+                storage: storage.storage,
+                volume: item.volid,
+                protected: item.protectedFlag != 1
+            )
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func delete(_ item: ProxmoxStorageContent) async {
+        guard let service = appState.service else { return }
+        isWorking = true
+        error = nil
+        defer {
+            isWorking = false
+            deletingItem = nil
+        }
+        do {
+            let upid = try await service.deleteStorageContent(
+                node: node,
+                storage: storage.storage,
+                volume: item.volid
+            )
+            if !upid.isEmpty {
+                appState.taskCenter.track(
+                    upid: upid,
+                    node: node,
+                    title: String(localized: "Delete storage content"),
+                    object: item.volid,
+                    service: service
+                )
+                _ = try await service.waitForTask(node: node, upid: upid)
+            }
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
 

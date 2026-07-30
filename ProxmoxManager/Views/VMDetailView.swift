@@ -18,6 +18,8 @@ struct VMDetailView: View {
     @State private var showingCloneGuest = false
     @State private var showingHardwareEditor = false
     @State private var showingCloudInitEditor = false
+    @State private var showingBackup = false
+    @State private var showingMigration = false
 
     var body: some View {
         List {
@@ -64,6 +66,22 @@ struct VMDetailView: View {
                                 showingCloudInitEditor = true
                             } label: {
                                 Label("Cloud-Init", systemImage: "cloud")
+                            }
+                        }
+
+                        if canBackUpGuest {
+                            Button {
+                                showingBackup = true
+                            } label: {
+                                Label("Back Up", systemImage: "externaldrive.badge.timemachine")
+                            }
+                        }
+
+                        if canMigrateGuest {
+                            Button {
+                                showingMigration = true
+                            } label: {
+                                Label("Migrate", systemImage: "arrow.right.arrow.left")
                             }
                         }
 
@@ -223,6 +241,16 @@ struct VMDetailView: View {
                 .environmentObject(appState)
             }
         }
+        .sheet(isPresented: $showingBackup) {
+            GuestBackupView(guest: guest)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showingMigration) {
+            GuestMigrationView(guest: guest) {
+                dismiss()
+            }
+            .environmentObject(appState)
+        }
         .overlay {
             if model.isPerformingAction {
                 Color.black.opacity(0.1).ignoresSafeArea()
@@ -282,8 +310,17 @@ struct VMDetailView: View {
         appState.hasPrivilege("VM.Config.Cloudinit", for: guest.vmid)
     }
 
+    private var canBackUpGuest: Bool {
+        appState.hasPrivilege("VM.Backup", for: guest.vmid)
+    }
+
+    private var canMigrateGuest: Bool {
+        appState.hasPrivilege("VM.Migrate", for: guest.vmid)
+    }
+
     private var canManageGuest: Bool {
-        canEditGuest || canEditHardware || canEditCloudInit || canCloneGuest || canDeleteGuest
+        canEditGuest || canEditHardware || canEditCloudInit || canBackUpGuest ||
+        canMigrateGuest || canCloneGuest || canDeleteGuest
     }
 
     @ViewBuilder
@@ -327,6 +364,21 @@ struct VMDetailView: View {
     @ViewBuilder
     private var nodeLinksSection: some View {
         Section {
+            if appState.hasPrivilege("VM.Console", for: guest.vmid) {
+                NavigationLink {
+                    GuestConsoleView(guest: guest)
+                        .environmentObject(appState)
+                } label: {
+                    Label(
+                        guest.type == .qemu
+                            ? String(localized: "Console")
+                            : String(localized: "Terminal"),
+                        systemImage: "terminal"
+                    )
+                }
+                .disabled(!isRunning)
+            }
+
             NavigationLink {
                 RRDChartView(
                     node: guest.node,
@@ -334,6 +386,13 @@ struct VMDetailView: View {
                 )
             } label: {
                 Label("Charts", systemImage: "chart.xyaxis.line")
+            }
+
+            NavigationLink {
+                GuestFirewallView(guest: guest)
+                    .environmentObject(appState)
+            } label: {
+                Label("Firewall", systemImage: "shield")
             }
         }
     }

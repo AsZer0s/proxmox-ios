@@ -13,6 +13,7 @@ struct GuestHardwareEditorView: View {
     @State private var showingAddDisk = false
     @State private var editingNetwork: GuestHardwareNetwork?
     @State private var showingAddNetwork = false
+    @State private var showingAddCloudInitDrive = false
     @State private var deletingNetwork: GuestHardwareNetwork?
     @State private var isWorking = false
     @State private var error: String?
@@ -30,6 +31,23 @@ struct GuestHardwareEditorView: View {
 
     private var canEditNetworks: Bool {
         appState.hasPrivilege("VM.Config.Network", for: guest.vmid)
+    }
+
+    private var canEditCloudInitDrive: Bool {
+        appState.hasAnyPrivilege(
+            ["VM.Config.Cloudinit", "VM.Config.CDROM"],
+            for: guest.vmid
+        )
+    }
+
+    private var cloudInitDrive: GuestHardwareDisk? {
+        config.rawValues.first { key, value in
+            key.range(
+                of: #"^(ide|sata|scsi)\d+$"#,
+                options: .regularExpression
+            ) != nil && value.lowercased().contains("cloudinit")
+        }
+        .map { GuestHardwareDisk(key: $0.key, value: $0.value) }
     }
 
     var body: some View {
@@ -118,6 +136,35 @@ struct GuestHardwareEditorView: View {
                     Text("Network Interfaces")
                 }
 
+                if guest.type == .qemu {
+                    Section {
+                        if let cloudInitDrive {
+                            HStack(spacing: 12) {
+                                Image(systemName: "cloud")
+                                    .foregroundStyle(.blue)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(cloudInitDrive.key.uppercased())
+                                        .font(.body.weight(.medium))
+                                    Text(cloudInitDrive.value)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } else if canEditCloudInitDrive {
+                            Button {
+                                showingAddCloudInitDrive = true
+                            } label: {
+                                Label("Add Cloud-Init Drive", systemImage: "plus.circle")
+                            }
+                        } else {
+                            Text("No Cloud-Init drive")
+                                .foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text("Cloud-Init Drive")
+                    }
+                }
+
                 if let error {
                     Section {
                         Label(error, systemImage: "exclamationmark.triangle")
@@ -158,6 +205,12 @@ struct GuestHardwareEditorView: View {
             }
             .sheet(isPresented: $showingAddNetwork) {
                 GuestNetworkEditorView(guest: guest, config: config, network: nil) {
+                    await reload()
+                }
+                .environmentObject(appState)
+            }
+            .sheet(isPresented: $showingAddCloudInitDrive) {
+                AddCloudInitDriveView(guest: guest, config: config) {
                     await reload()
                 }
                 .environmentObject(appState)

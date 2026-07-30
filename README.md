@@ -31,9 +31,12 @@ Whether you are checking cluster health, responding to an unavailable guest, or 
 | **Lifecycle controls** | Start, reboot, gracefully shut down, or force-stop guests with confirmation for destructive actions. |
 | **Create and configure** | Create, edit, delete, and fully clone virtual machines and containers. Adjust CPU, memory, boot behavior, and other options. |
 | **Hardware management** | Inspect and manage disks and network interfaces, including disk expansion and network configuration. |
-| **Cloud-Init** | Configure users, SSH keys, DNS, package upgrades, and IPv4 / IPv6 networking. |
+| **Cloud-Init** | Add a Cloud-Init drive, then configure users, SSH keys, DNS, package upgrades, and IPv4 / IPv6 networking. |
 | **Snapshots** | Create, roll back, and delete snapshots, with optional virtual machine state capture. |
-| **Storage and backups** | Review storage capacity, usage, and content, plus backup schedules and available archives. |
+| **Storage and backups** | Review and remove storage content; create, restore, protect, unprotect, and delete backup archives. |
+| **Migration** | Move virtual machines and containers between compatible cluster nodes, including local-disk migration and storage mapping. |
+| **Firewall** | Manage guest firewall options, rules, security-group references, IPSets, IPSet entries, and firewall logs. |
+| **Console** | Open the built-in noVNC console or LXC terminal from password-authenticated connections. |
 | **Installation media** | Import an ISO from a URL or browse and download Proxmox LXC appliance templates. |
 | **Performance charts** | Explore CPU, memory, network, and disk history for nodes and guests across hourly, daily, and weekly ranges. |
 | **Task center** | Follow long-running Proxmox tasks, inspect results and logs, and cancel tasks that are still running. |

@@ -26,6 +26,14 @@ enum ProxmoxEndpoint {
         "\(guest(node: node, type: type, vmid: vmid))/resize"
     }
 
+    static func guestMigrate(node: String, type: GuestType, vmid: Int) -> String {
+        "\(guest(node: node, type: type, vmid: vmid))/migrate"
+    }
+
+    static func guestFirewall(node: String, type: GuestType, vmid: Int) -> String {
+        "\(guest(node: node, type: type, vmid: vmid))/firewall"
+    }
+
     static func storageContent(node: String, storage: String, content: String? = nil) -> String {
         var path = "/nodes/\(node)/storage/\(storage.pathEscaped)/content"
         if let content, !content.isEmpty {
@@ -40,6 +48,10 @@ enum ProxmoxEndpoint {
 
     static func storageDownload(node: String, storage: String) -> String {
         "/nodes/\(node)/storage/\(storage.pathEscaped)/download-url"
+    }
+
+    static func storageVolume(node: String, storage: String, volume: String) -> String {
+        "/nodes/\(node)/storage/\(storage.pathEscaped)/content/\(volume.pathEscaped)"
     }
 
     static func backupArchives(node: String, storage: String) -> String {
@@ -65,6 +77,7 @@ enum ProxmoxError: LocalizedError {
     case taskTimeout
     case network(String)
     case tfaRequired
+    case webConsoleRequiresTicket
 
     var errorDescription: String? {
         switch self {
@@ -90,6 +103,10 @@ enum ProxmoxError: LocalizedError {
             return "Network error: \(msg)"
         case .tfaRequired:
             return "Two-factor authentication is required. Enter your TOTP code."
+        case .webConsoleRequiresTicket:
+            return String(
+                localized: "The integrated console requires a username and password connection."
+            )
         }
     }
 }
@@ -221,6 +238,13 @@ actor ProxmoxAPIService {
         } catch {
             throw ProxmoxError.decodingFailed(error.localizedDescription)
         }
+    }
+
+    func webConsoleTicket() throws -> String {
+        guard server.authMethod == .ticket, let ticket, !ticket.isEmpty else {
+            throw ProxmoxError.webConsoleRequiresTicket
+        }
+        return ticket
     }
 
     static func totpFormBody(
@@ -379,6 +403,45 @@ actor ProxmoxAPIService {
                 "disk": disk,
                 "size": "+\(growGiB)G",
             ]
+        )
+    }
+
+    func fetchMigrationPreconditions(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        target: String? = nil
+    ) async throws -> GuestMigrationPreconditions {
+        var path = ProxmoxEndpoint.guestMigrate(node: node, type: type, vmid: vmid)
+        if let target, !target.isEmpty {
+            path += "?target=\(target.formURLEncoded)"
+        }
+        return try await get(path, as: GuestMigrationPreconditions.self)
+    }
+
+    @discardableResult
+    func migrateGuest(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        target: String,
+        online: Bool,
+        targetStorage: String?,
+        withLocalDisks: Bool
+    ) async throws -> String {
+        var form = [
+            "target": target,
+            "online": online ? "1" : "0",
+        ]
+        if let targetStorage, !targetStorage.isEmpty {
+            form[type == .qemu ? "targetstorage" : "target-storage"] = targetStorage
+        }
+        if type == .qemu, withLocalDisks {
+            form["with-local-disks"] = "1"
+        }
+        return try await post(
+            ProxmoxEndpoint.guestMigrate(node: node, type: type, vmid: vmid),
+            form: form
         )
     }
 
@@ -570,6 +633,37 @@ actor ProxmoxAPIService {
         )
     }
 
+    @discardableResult
+    func deleteStorageContent(
+        node: String,
+        storage: String,
+        volume: String
+    ) async throws -> String {
+        try await delete(
+            ProxmoxEndpoint.storageVolume(node: node, storage: storage, volume: volume)
+        )
+    }
+
+    func updateStorageContent(
+        node: String,
+        storage: String,
+        volume: String,
+        protected: Bool? = nil,
+        notes: String? = nil
+    ) async throws {
+        var form: [String: String] = [:]
+        if let protected {
+            form["protected"] = protected ? "1" : "0"
+        }
+        if let notes {
+            form["notes"] = notes
+        }
+        _ = try await put(
+            ProxmoxEndpoint.storageVolume(node: node, storage: storage, volume: volume),
+            form: form
+        )
+    }
+
     // MARK: Backups
 
     func fetchBackupJobs(node: String) async throws -> [ProxmoxBackupJob] {
@@ -629,6 +723,198 @@ actor ProxmoxAPIService {
             "mode": mode,
         ]
         return try await post(ProxmoxEndpoint.vzdump(node: node), form: form)
+    }
+
+    @discardableResult
+    func restoreBackup(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        archive: String,
+        storage: String?,
+        unique: Bool = true
+    ) async throws -> String {
+        var form = [
+            "vmid": "\(vmid)",
+            "unique": unique ? "1" : "0",
+        ]
+        if let storage, !storage.isEmpty {
+            form["storage"] = storage
+        }
+        form[type == .qemu ? "archive" : "ostemplate"] = archive
+        return try await post(ProxmoxEndpoint.guests(node: node, type: type), form: form)
+    }
+
+    // MARK: Guest Firewall
+
+    func fetchGuestFirewallRules(
+        node: String,
+        type: GuestType,
+        vmid: Int
+    ) async throws -> [GuestFirewallRule] {
+        try await get(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/rules",
+            as: [GuestFirewallRule].self
+        )
+        .sorted { $0.pos < $1.pos }
+    }
+
+    func fetchGuestFirewallOptions(
+        node: String,
+        type: GuestType,
+        vmid: Int
+    ) async throws -> GuestFirewallOptions {
+        try await get(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/options",
+            as: GuestFirewallOptions.self
+        )
+    }
+
+    func updateGuestFirewallOptions(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        form: [String: String]
+    ) async throws {
+        _ = try await put(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/options",
+            form: form
+        )
+    }
+
+    func createGuestFirewallRule(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        form: [String: String]
+    ) async throws {
+        _ = try await post(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/rules",
+            form: form
+        )
+    }
+
+    func updateGuestFirewallRule(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        position: Int,
+        form: [String: String]
+    ) async throws {
+        _ = try await put(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/rules/\(position)",
+            form: form
+        )
+    }
+
+    func deleteGuestFirewallRule(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        position: Int
+    ) async throws {
+        _ = try await delete(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/rules/\(position)"
+        )
+    }
+
+    func fetchGuestFirewallIPSets(
+        node: String,
+        type: GuestType,
+        vmid: Int
+    ) async throws -> [GuestFirewallIPSet] {
+        try await get(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/ipset",
+            as: [GuestFirewallIPSet].self
+        )
+    }
+
+    func createGuestFirewallIPSet(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        name: String,
+        comment: String?
+    ) async throws {
+        var form = ["name": name]
+        if let comment, !comment.isEmpty { form["comment"] = comment }
+        _ = try await post(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/ipset",
+            form: form
+        )
+    }
+
+    func deleteGuestFirewallIPSet(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        name: String
+    ) async throws {
+        _ = try await delete(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/ipset/\(name.pathEscaped)",
+            form: ["force": "1"]
+        )
+    }
+
+    func fetchGuestFirewallIPSetEntries(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        name: String
+    ) async throws -> [GuestFirewallIPSetEntry] {
+        try await get(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/ipset/\(name.pathEscaped)",
+            as: [GuestFirewallIPSetEntry].self
+        )
+    }
+
+    func addGuestFirewallIPSetEntry(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        name: String,
+        cidr: String,
+        comment: String?,
+        nomatch: Bool
+    ) async throws {
+        var form = [
+            "cidr": cidr,
+            "nomatch": nomatch ? "1" : "0",
+        ]
+        if let comment, !comment.isEmpty { form["comment"] = comment }
+        _ = try await post(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/ipset/\(name.pathEscaped)",
+            form: form
+        )
+    }
+
+    func deleteGuestFirewallIPSetEntry(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        name: String,
+        cidr: String
+    ) async throws {
+        _ = try await delete(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/ipset/\(name.pathEscaped)/\(cidr.pathEscaped)"
+        )
+    }
+
+    func fetchFirewallSecurityGroups() async throws -> [FirewallSecurityGroup] {
+        try await get("/cluster/firewall/groups", as: [FirewallSecurityGroup].self)
+            .sorted { $0.group.localizedCaseInsensitiveCompare($1.group) == .orderedAscending }
+    }
+
+    func fetchGuestFirewallLog(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        limit: Int = 500
+    ) async throws -> [ProxmoxTaskLogEntry] {
+        try await get(
+            "\(ProxmoxEndpoint.guestFirewall(node: node, type: type, vmid: vmid))/log?limit=\(limit)",
+            as: [ProxmoxTaskLogEntry].self
+        )
     }
 
     // MARK: RRD / Historical data

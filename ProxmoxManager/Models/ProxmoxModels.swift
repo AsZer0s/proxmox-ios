@@ -433,6 +433,73 @@ struct VMStatus: Codable, Hashable {
     var isRunning: Bool { status.lowercased() == "running" }
 }
 
+struct GuestMigrationPreconditions: Decodable, Equatable {
+    struct LocalDisk: Decodable, Equatable {
+        let volid: String
+        let size: Int64?
+        let cdrom: Bool?
+        let isUnused: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case volid, size, cdrom
+            case isUnused = "is_unused"
+        }
+    }
+
+    let allowedNodes: [String]
+    let localDisks: [LocalDisk]
+    let localResources: [String]
+    let running: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case allowedNodesUnderscore = "allowed_nodes"
+        case allowedNodesHyphen = "allowed-nodes"
+        case localDisksUnderscore = "local_disks"
+        case localDisksHyphen = "local-disks"
+        case localResourcesUnderscore = "local_resources"
+        case localResourcesHyphen = "local-resources"
+        case running
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let underscoreAllowedNodes = try container.decodeIfPresent(
+            [String].self,
+            forKey: .allowedNodesUnderscore
+        )
+        let hyphenAllowedNodes = try container.decodeIfPresent(
+            [String].self,
+            forKey: .allowedNodesHyphen
+        )
+        allowedNodes = underscoreAllowedNodes ?? hyphenAllowedNodes ?? []
+        let underscoreLocalDisks = try container.decodeIfPresent(
+            [LocalDisk].self,
+            forKey: .localDisksUnderscore
+        )
+        let hyphenLocalDisks = try container.decodeIfPresent(
+            [LocalDisk].self,
+            forKey: .localDisksHyphen
+        )
+        localDisks = underscoreLocalDisks ?? hyphenLocalDisks ?? []
+        let underscoreLocalResources = try container.decodeIfPresent(
+            [String].self,
+            forKey: .localResourcesUnderscore
+        )
+        let hyphenLocalResources = try container.decodeIfPresent(
+            [String].self,
+            forKey: .localResourcesHyphen
+        )
+        localResources = underscoreLocalResources ?? hyphenLocalResources ?? []
+        if let value = try? container.decode(Bool.self, forKey: .running) {
+            running = value
+        } else if let value = try? container.decode(Int.self, forKey: .running) {
+            running = value != 0
+        } else {
+            running = nil
+        }
+    }
+}
+
 struct GuestConfig: Decodable, Hashable {
     let name: String?
     let hostname: String?
@@ -586,7 +653,9 @@ extension GuestConfig {
                 isDisk = key.range(
                     of: #"^(scsi|virtio|sata|ide)\d+$"#,
                     options: .regularExpression
-                ) != nil && !value.contains("media=cdrom")
+                ) != nil &&
+                    !value.contains("media=cdrom") &&
+                    !value.lowercased().contains("cloudinit")
             } else {
                 isDisk = key == "rootfs" ||
                     key.range(of: #"^mp\d+$"#, options: .regularExpression) != nil
@@ -1352,6 +1421,125 @@ struct ProxmoxBackupFile: Identifiable, Hashable {
     let isProtected: Bool
 
     var id: String { volid }
+
+    var guestType: GuestType {
+        let value = volid.lowercased()
+        return value.contains("vzdump-lxc") || value.contains("/ct/")
+            ? .lxc
+            : .qemu
+    }
+}
+
+// MARK: - Guest Firewall
+
+struct GuestFirewallRule: Decodable, Identifiable, Hashable {
+    let pos: Int
+    let type: String
+    let action: String
+    let enabled: Bool
+    let source: String?
+    let destination: String?
+    let protocolName: String?
+    let sourcePort: String?
+    let destinationPort: String?
+    let interface: String?
+    let logLevel: String?
+    let macro: String?
+    let comment: String?
+
+    var id: Int { pos }
+
+    enum CodingKeys: String, CodingKey {
+        case pos, type, action, source, iface, log, macro, comment, enable, proto
+        case destination = "dest"
+        case sourcePort = "sport"
+        case destinationPort = "dport"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pos = container.decodeFlexibleInt(forKey: .pos) ?? 0
+        type = try container.decode(String.self, forKey: .type)
+        action = try container.decode(String.self, forKey: .action)
+        enabled = (container.decodeFlexibleInt(forKey: .enable) ?? 1) != 0
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        destination = try container.decodeIfPresent(String.self, forKey: .destination)
+        protocolName = try container.decodeIfPresent(String.self, forKey: .proto)
+        sourcePort = try container.decodeIfPresent(String.self, forKey: .sourcePort)
+        destinationPort = try container.decodeIfPresent(String.self, forKey: .destinationPort)
+        interface = try container.decodeIfPresent(String.self, forKey: .iface)
+        logLevel = try container.decodeIfPresent(String.self, forKey: .log)
+        macro = try container.decodeIfPresent(String.self, forKey: .macro)
+        comment = try container.decodeIfPresent(String.self, forKey: .comment)
+    }
+}
+
+struct GuestFirewallOptions: Decodable, Equatable {
+    let enabled: Bool
+    let inputPolicy: String
+    let outputPolicy: String
+    let dhcp: Bool
+    let ipFilter: Bool
+    let macFilter: Bool
+    let ndp: Bool
+    let routerAdvertisement: Bool
+    let inputLogLevel: String
+    let outputLogLevel: String
+
+    private enum CodingKeys: String, CodingKey {
+        case enable, dhcp, ipfilter, macfilter, ndp, radv
+        case inputPolicy = "policy_in"
+        case outputPolicy = "policy_out"
+        case inputLogLevel = "log_level_in"
+        case outputLogLevel = "log_level_out"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = (container.decodeFlexibleInt(forKey: .enable) ?? 0) != 0
+        inputPolicy = try container.decodeIfPresent(String.self, forKey: .inputPolicy) ?? "DROP"
+        outputPolicy = try container.decodeIfPresent(String.self, forKey: .outputPolicy) ?? "ACCEPT"
+        dhcp = (container.decodeFlexibleInt(forKey: .dhcp) ?? 0) != 0
+        ipFilter = (container.decodeFlexibleInt(forKey: .ipfilter) ?? 0) != 0
+        macFilter = (container.decodeFlexibleInt(forKey: .macfilter) ?? 1) != 0
+        ndp = (container.decodeFlexibleInt(forKey: .ndp) ?? 1) != 0
+        routerAdvertisement = (container.decodeFlexibleInt(forKey: .radv) ?? 0) != 0
+        inputLogLevel = try container.decodeIfPresent(String.self, forKey: .inputLogLevel) ?? "nolog"
+        outputLogLevel = try container.decodeIfPresent(String.self, forKey: .outputLogLevel) ?? "nolog"
+    }
+}
+
+struct GuestFirewallIPSet: Decodable, Identifiable, Hashable {
+    let name: String
+    let comment: String?
+
+    var id: String { name }
+}
+
+struct GuestFirewallIPSetEntry: Decodable, Identifiable, Hashable {
+    let cidr: String
+    let comment: String?
+    let nomatch: Bool
+
+    var id: String { cidr }
+
+    private enum CodingKeys: String, CodingKey {
+        case cidr, comment, nomatch
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cidr = try container.decode(String.self, forKey: .cidr)
+        comment = try container.decodeIfPresent(String.self, forKey: .comment)
+        nomatch = (container.decodeFlexibleInt(forKey: .nomatch) ?? 0) != 0
+    }
+}
+
+struct FirewallSecurityGroup: Decodable, Identifiable, Hashable {
+    let group: String
+    let comment: String?
+
+    var id: String { group }
 }
 
 // MARK: - Historical / RRD

@@ -164,6 +164,7 @@ final class ProxmoxManagerTests: XCTestCase {
           "mp2": "local-lvm:vm-200-disk-1,mp=/data,size=16G",
           "scsi1": "local-lvm:vm-100-disk-1,size=32G",
           "ide2": "local:iso/debian.iso,media=cdrom",
+          "ide3": "local-lvm:cloudinit",
           "net3": "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,tag=20"
         }
         """#.utf8)
@@ -171,6 +172,7 @@ final class ProxmoxManagerTests: XCTestCase {
         let config = try JSONDecoder().decode(GuestConfig.self, from: data)
 
         XCTAssertEqual(config.rawValues["scsi1"], "local-lvm:vm-100-disk-1,size=32G")
+        XCTAssertEqual(config.rawValues["ide3"], "local-lvm:cloudinit")
         XCTAssertEqual(config.disks(for: .qemu).map(\.key), ["scsi1"])
         XCTAssertEqual(config.disks(for: .qemu).first?.size, "32G")
         XCTAssertEqual(config.disks(for: .lxc).map(\.key), ["mp2", "rootfs"])
@@ -247,6 +249,59 @@ final class ProxmoxManagerTests: XCTestCase {
             settings.encodedValue,
             "ip=10.0.10.25/24,gw=10.0.10.1,ip6=auto,custom=value"
         )
+    }
+
+    func testMigrationPreconditionsDecodeQEMUAndLXCVariants() throws {
+        let qemu = try JSONDecoder().decode(
+            GuestMigrationPreconditions.self,
+            from: Data(#"""
+            {
+              "allowed_nodes": ["pve2"],
+              "local_disks": [{"volid":"local-lvm:vm-100-disk-0","size":1024,"cdrom":false,"is_unused":false}],
+              "local_resources": ["hostpci0"],
+              "running": 1
+            }
+            """#.utf8)
+        )
+        XCTAssertEqual(qemu.allowedNodes, ["pve2"])
+        XCTAssertEqual(qemu.localDisks.first?.volid, "local-lvm:vm-100-disk-0")
+        XCTAssertEqual(qemu.localResources, ["hostpci0"])
+        XCTAssertEqual(qemu.running, true)
+
+        let lxc = try JSONDecoder().decode(
+            GuestMigrationPreconditions.self,
+            from: Data(#"{"allowed-nodes":["pve3"],"running":false}"#.utf8)
+        )
+        XCTAssertEqual(lxc.allowedNodes, ["pve3"])
+        XCTAssertEqual(lxc.running, false)
+    }
+
+    func testFirewallModelsDecodeFlexibleFlags() throws {
+        let rule = try JSONDecoder().decode(
+            GuestFirewallRule.self,
+            from: Data(#"""
+            {
+              "pos":"2","type":"in","action":"ACCEPT","enable":"1",
+              "proto":"tcp","dport":"22","comment":"SSH"
+            }
+            """#.utf8)
+        )
+        XCTAssertEqual(rule.pos, 2)
+        XCTAssertTrue(rule.enabled)
+        XCTAssertEqual(rule.destinationPort, "22")
+
+        let options = try JSONDecoder().decode(
+            GuestFirewallOptions.self,
+            from: Data(#"""
+            {
+              "enable":true,"policy_in":"DROP","policy_out":"ACCEPT",
+              "dhcp":0,"macfilter":"1"
+            }
+            """#.utf8)
+        )
+        XCTAssertTrue(options.enabled)
+        XCTAssertEqual(options.inputPolicy, "DROP")
+        XCTAssertTrue(options.macFilter)
     }
 
     // MARK: - Task status
@@ -629,6 +684,14 @@ final class ProxmoxManagerTests: XCTestCase {
             "/nodes/pve1/qemu/120/resize"
         )
         XCTAssertEqual(
+            ProxmoxEndpoint.guestMigrate(node: "pve1", type: .lxc, vmid: 120),
+            "/nodes/pve1/lxc/120/migrate"
+        )
+        XCTAssertEqual(
+            ProxmoxEndpoint.guestFirewall(node: "pve1", type: .qemu, vmid: 120),
+            "/nodes/pve1/qemu/120/firewall"
+        )
+        XCTAssertEqual(
             ProxmoxEndpoint.storageContent(
                 node: "pve1",
                 storage: "local/templates",
@@ -640,6 +703,14 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(
             ProxmoxEndpoint.storageDownload(node: "pve1", storage: "local/iso"),
             "/nodes/pve1/storage/local%2Fiso/download-url"
+        )
+        XCTAssertEqual(
+            ProxmoxEndpoint.storageVolume(
+                node: "pve1",
+                storage: "local",
+                volume: "local:backup/vzdump-qemu-100.vma.zst"
+            ),
+            "/nodes/pve1/storage/local/content/local%3Abackup%2Fvzdump-qemu-100.vma.zst"
         )
     }
 
