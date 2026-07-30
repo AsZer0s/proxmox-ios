@@ -11,8 +11,8 @@ enum AuthMethod: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .ticket: return "Username + Password"
-        case .token: return "API Token"
+        case .ticket: return String(localized: "Username + Password")
+        case .token: return String(localized: "API Token")
         }
     }
 }

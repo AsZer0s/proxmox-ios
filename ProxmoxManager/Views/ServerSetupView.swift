@@ -75,7 +75,12 @@ struct ServerSetupView: View {
                         .autocorrectionDisabled()
 
                     if authMethod == .ticket {
-                        SecureField(isEditing ? "New password (optional)" : "Password", text: $password)
+                        SecureField(
+                            isEditing
+                                ? String(localized: "New password (optional)")
+                                : String(localized: "Password"),
+                            text: $password
+                        )
                     } else {
                         TextField("Token ID (e.g. root@pam!mytoken)", text: $tokenID)
                             .textInputAutocapitalization(.never)
@@ -103,7 +108,11 @@ struct ServerSetupView: View {
                                 if isTesting {
                                     ProgressView()
                                 }
-                                Text(isTesting ? "Testing…" : "Test Connection")
+                                Text(
+                                    isTesting
+                                        ? String(localized: "Testing…")
+                                        : String(localized: "Test Connection")
+                                )
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -117,7 +126,11 @@ struct ServerSetupView: View {
                     }
                 }
             }
-            .navigationTitle(isEditing ? "Edit Server" : "Add Server")
+            .navigationTitle(
+                isEditing
+                    ? String(localized: "Edit Server")
+                    : String(localized: "Add Server")
+            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -156,12 +169,12 @@ struct ServerSetupView: View {
                 }
                 let _ = try await service.fetchNodes()
                 await MainActor.run {
-                    testResult = "✓ Connected successfully"
+                    testResult = String(localized: "✓ Connected successfully")
                     isTesting = false
                 }
             } catch {
                 await MainActor.run {
-                    testResult = "✗ \(error.localizedDescription)"
+                    testResult = String(localized: "Connection failed: \(error.localizedDescription)")
                     isTesting = false
                 }
             }

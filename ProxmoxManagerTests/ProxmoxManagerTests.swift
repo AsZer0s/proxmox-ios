@@ -47,8 +47,8 @@ final class ProxmoxManagerTests: XCTestCase {
 
     func testAuthMethodCases() {
         XCTAssertEqual(AuthMethod.allCases.count, 2)
-        XCTAssertEqual(AuthMethod.ticket.label, "Username + Password")
-        XCTAssertEqual(AuthMethod.token.label, "API Token")
+        XCTAssertEqual(AuthMethod.ticket.label, String(localized: "Username + Password"))
+        XCTAssertEqual(AuthMethod.token.label, String(localized: "API Token"))
     }
 
     func testServerCodableRetainsAllFields() throws {

@@ -796,7 +796,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Token ID（如 root@pam!mytoken）"
+            "value": "令牌 ID（如 root@pam!mytoken）"
           }
         }
       }
@@ -812,7 +812,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Token 密钥"
+            "value": "令牌密钥"
           }
         }
       }
@@ -1548,7 +1548,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "API Token"
+            "value": "API 令牌"
           }
         }
       }
@@ -2908,7 +2908,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Token：%@"
+            "value": "令牌：%@"
           }
         }
       }
@@ -3357,6 +3357,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除快照"
+          }
+        }
+      }
+    },
+    "Connection failed: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection failed: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接失败：%@"
           }
         }
       }
