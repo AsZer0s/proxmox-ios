@@ -3,9 +3,9 @@ import SwiftUI
 /// A card that shows a single metric with an icon, a title, a primary value,
 /// and an optional usage bar (0...1 fraction).
 struct ResourceCard: View {
-    let title: String
+    let title: LocalizedStringKey
     let value: String
-    var subtitle: String? = nil
+    var subtitle: LocalizedStringKey? = nil
     var systemImage: String
     var fraction: Double? = nil
     var tint: Color = .accentColor

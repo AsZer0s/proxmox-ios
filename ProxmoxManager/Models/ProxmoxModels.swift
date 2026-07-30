@@ -687,10 +687,10 @@ enum GuestAction: String, CaseIterable, Sendable {
 
     var label: String {
         switch self {
-        case .start: return "Start"
-        case .stop: return "Stop"
-        case .shutdown: return "Shutdown"
-        case .reboot: return "Reboot"
+        case .start: return String(localized: "Start")
+        case .stop: return String(localized: "Stop")
+        case .shutdown: return String(localized: "Shutdown")
+        case .reboot: return String(localized: "Reboot")
         }
     }
 

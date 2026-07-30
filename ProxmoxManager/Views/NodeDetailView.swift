@@ -113,7 +113,7 @@ struct NodeDetailView: View {
             .listRowInsets(EdgeInsets())
             .padding(.vertical, 4)
 
-            LabeledContent("Status", value: node.status.capitalized)
+            LabeledContent("Status", value: localizedProxmoxStatus(node.status))
             LabeledContent("Uptime", value: (model.status?.uptime ?? node.uptime).formattedUptime)
 
             if let loadavg = model.status?.loadavg, !loadavg.isEmpty {

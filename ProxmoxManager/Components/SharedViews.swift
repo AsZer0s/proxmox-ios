@@ -3,7 +3,7 @@ import SwiftUI
 /// A labeled horizontal usage bar with a trailing detail string, used for
 /// CPU / memory / disk metrics on the node and guest screens.
 struct MetricBar: View {
-    let label: String
+    let label: LocalizedStringKey
     /// 0...1 fraction.
     let value: Double
     /// Trailing detail text, e.g. "1.5 GB / 4 GB".
@@ -61,9 +61,9 @@ struct ErrorStateView: View {
 
 /// Empty-state placeholder using a hand-rolled layout for iOS 16 compatibility.
 struct ContentUnavailableCompat: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
-    let description: String
+    let description: LocalizedStringKey
 
     var body: some View {
         VStack(spacing: 12) {

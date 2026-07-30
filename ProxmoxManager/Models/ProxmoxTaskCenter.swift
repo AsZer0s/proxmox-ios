@@ -9,9 +9,9 @@ struct ManagedProxmoxTask: Identifiable {
 
         var label: String {
             switch self {
-            case .running: return "Running"
-            case .succeeded: return "Succeeded"
-            case .failed: return "Failed"
+            case .running: return String(localized: "Running")
+            case .succeeded: return String(localized: "Succeeded")
+            case .failed: return String(localized: "Failed")
             }
         }
     }
@@ -70,7 +70,7 @@ final class ProxmoxTaskCenter: ObservableObject {
                 self?.finish(
                     id: id,
                     state: .failed,
-                    message: "Task tracking was cancelled.",
+                    message: String(localized: "Task tracking was cancelled."),
                     log: []
                 )
             } catch {
@@ -100,9 +100,11 @@ final class ProxmoxTaskCenter: ObservableObject {
             try await service.cancelTask(node: node, upid: upid)
             tasks[index].finishedAt = Date()
             tasks[index].state = .failed
-            tasks[index].message = "Cancelled by user."
+            tasks[index].message = String(localized: "Cancelled by user.")
         } catch {
-            tasks[index].message = "Cancel failed: \(error.localizedDescription)"
+            tasks[index].message = String(
+                localized: "Cancel failed: \(error.localizedDescription)"
+            )
         }
     }
 

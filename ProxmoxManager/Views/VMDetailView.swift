@@ -552,7 +552,7 @@ final class VMDetailViewModel: ObservableObject {
     ) async {
         guard let service, !name.isEmpty else { return }
         isPerformingAction = true
-        taskMessage = "Creating snapshot…"
+        taskMessage = String(localized: "Creating snapshot…")
         defer { isPerformingAction = false }
         do {
             let upid = try await service.createSnapshot(
@@ -567,7 +567,7 @@ final class VMDetailViewModel: ObservableObject {
                 taskCenter.track(
                     upid: upid,
                     node: guest.node,
-                    title: "Create snapshot",
+                    title: String(localized: "Create snapshot"),
                     object: guest.displayName,
                     service: service
                 )
@@ -589,7 +589,7 @@ final class VMDetailViewModel: ObservableObject {
     ) async {
         guard let service else { return }
         isPerformingAction = true
-        taskMessage = "Rolling back snapshot…"
+        taskMessage = String(localized: "Rolling back snapshot…")
         defer { isPerformingAction = false }
         do {
             let upid = try await service.rollbackSnapshot(
@@ -602,7 +602,7 @@ final class VMDetailViewModel: ObservableObject {
                 taskCenter.track(
                     upid: upid,
                     node: guest.node,
-                    title: "Rollback snapshot",
+                    title: String(localized: "Rollback snapshot"),
                     object: "\(guest.displayName) · \(snapshot.name)",
                     service: service
                 )
@@ -624,7 +624,7 @@ final class VMDetailViewModel: ObservableObject {
     ) async {
         guard let service else { return }
         isPerformingAction = true
-        taskMessage = "Deleting snapshot…"
+        taskMessage = String(localized: "Deleting snapshot…")
         defer { isPerformingAction = false }
         do {
             let upid = try await service.deleteSnapshot(
@@ -637,7 +637,7 @@ final class VMDetailViewModel: ObservableObject {
                 taskCenter.track(
                     upid: upid,
                     node: guest.node,
-                    title: "Delete snapshot",
+                    title: String(localized: "Delete snapshot"),
                     object: "\(guest.displayName) · \(snapshot.name)",
                     service: service
                 )
@@ -659,12 +659,12 @@ final class VMDetailViewModel: ObservableObject {
     ) async {
         guard let service = service else { return }
         isPerformingAction = true
-        taskMessage = "Submitting action…"
+        taskMessage = String(localized: "Submitting action…")
         defer { isPerformingAction = false }
         do {
             let upid = try await service.performAction(action, node: guest.node, type: guest.type, vmid: guest.vmid)
             if !upid.isEmpty {
-                taskMessage = "Waiting for Proxmox task…"
+                taskMessage = String(localized: "Waiting for Proxmox task…")
                 taskCenter.track(
                     upid: upid,
                     node: guest.node,

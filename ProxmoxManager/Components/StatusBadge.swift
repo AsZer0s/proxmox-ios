@@ -5,8 +5,7 @@ struct StatusBadge: View {
     let status: String?
 
     private var text: String {
-        guard let status = status, !status.isEmpty else { return "unknown" }
-        return status
+        localizedProxmoxStatus(status)
     }
 
     var body: some View {
@@ -23,6 +22,18 @@ struct StatusBadge: View {
         .background(
             Capsule().fill(Color.forStatus(status).opacity(0.12))
         )
+    }
+}
+
+func localizedProxmoxStatus(_ status: String?) -> String {
+    switch status?.lowercased() {
+    case "running": return String(localized: "Running")
+    case "stopped": return String(localized: "Stopped")
+    case "paused": return String(localized: "Paused")
+    case "online": return String(localized: "Online")
+    case "offline": return String(localized: "Offline")
+    case .some(let value) where !value.isEmpty: return value.capitalized
+    default: return String(localized: "Unknown")
     }
 }
 

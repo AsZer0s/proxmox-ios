@@ -384,10 +384,17 @@ final class ProxmoxManagerTests: XCTestCase {
     }
 
     func testGuestActionLabels() {
-        XCTAssertEqual(GuestAction.start.label, "Start")
-        XCTAssertEqual(GuestAction.stop.label, "Stop")
-        XCTAssertEqual(GuestAction.shutdown.label, "Shutdown")
-        XCTAssertEqual(GuestAction.reboot.label, "Reboot")
+        XCTAssertEqual(GuestAction.start.label, String(localized: "Start"))
+        XCTAssertEqual(GuestAction.stop.label, String(localized: "Stop"))
+        XCTAssertEqual(GuestAction.shutdown.label, String(localized: "Shutdown"))
+        XCTAssertEqual(GuestAction.reboot.label, String(localized: "Reboot"))
+    }
+
+    func testProxmoxStatusLabelsAreLocalized() {
+        XCTAssertEqual(localizedProxmoxStatus("running"), String(localized: "Running"))
+        XCTAssertEqual(localizedProxmoxStatus("online"), String(localized: "Online"))
+        XCTAssertEqual(localizedProxmoxStatus(nil), String(localized: "Unknown"))
+        XCTAssertEqual(localizedProxmoxStatus("migrating"), "Migrating")
     }
 
     // MARK: - ProxmoxStorage

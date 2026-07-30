@@ -206,7 +206,7 @@ struct RRDChartView: View {
                         Text("\(dataPoints.count) data points")
                             .font(.caption)
                         Spacer()
-                        Text(selectedTimeframe == "hour" ? "Past hour" : selectedTimeframe == "day" ? "Past day" : "Past week")
+                        Text(timeframeRangeLabel)
                             .font(.caption)
                     }
                     .foregroundStyle(.secondary)
@@ -362,22 +362,22 @@ struct RRDChartView: View {
     private func formattedValue(_ val: Double) -> String {
         switch selectedMetric {
         case "cpu", "memory":
-            return String(format: "%.1f%%", val)
+            return String(format: "%.2f%%", val)
         case "network", "disk":
             return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
         default:
-            return String(format: "%.1f", val)
+            return String(format: "%.2f", val)
         }
     }
 
     private func formattedGridValue(_ val: Double) -> String {
         switch selectedMetric {
         case "cpu", "memory":
-            return String(format: "%.0f%%", val)
+            return String(format: "%.2f%%", val)
         case "network", "disk":
             return ByteCountFormatter.string(fromByteCount: Int64(val), countStyle: .binary)
         default:
-            return String(format: "%.0f", val)
+            return String(format: "%.2f", val)
         }
     }
 
@@ -419,6 +419,14 @@ struct RRDChartView: View {
         case "day": return String(localized: "24h")
         case "week": return String(localized: "7d")
         default: return tf
+        }
+    }
+
+    private var timeframeRangeLabel: String {
+        switch selectedTimeframe {
+        case "hour": return String(localized: "Past hour")
+        case "day": return String(localized: "Past day")
+        default: return String(localized: "Past week")
         }
     }
 }
