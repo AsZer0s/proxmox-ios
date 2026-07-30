@@ -392,6 +392,32 @@ struct GuestCreateRequest: Equatable {
     }
 }
 
+struct GuestCloneRequest: Equatable {
+    let node: String
+    let type: GuestType
+    let vmid: Int
+    let newVMID: Int
+    let name: String
+    let description: String
+    let storage: String?
+    let full: Bool
+
+    var form: [String: String] {
+        var values = [
+            "newid": "\(newVMID)",
+            "full": full ? "1" : "0",
+        ]
+        values[type == .qemu ? "name" : "hostname"] = name
+        if !description.trimmed.isEmpty {
+            values["description"] = description.trimmed
+        }
+        if let storage, !storage.isEmpty {
+            values["storage"] = storage
+        }
+        return values
+    }
+}
+
 /// Detailed guest status from `/status/current`.
 struct VMStatus: Codable, Hashable {
     let status: String

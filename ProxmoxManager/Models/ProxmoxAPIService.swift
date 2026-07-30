@@ -18,6 +18,10 @@ enum ProxmoxEndpoint {
         "\(guest(node: node, type: type, vmid: vmid))/config"
     }
 
+    static func guestClone(node: String, type: GuestType, vmid: Int) -> String {
+        "\(guest(node: node, type: type, vmid: vmid))/clone"
+    }
+
     static func storageContent(node: String, storage: String, content: String? = nil) -> String {
         var path = "/nodes/\(node)/storage/\(storage.pathEscaped)/content"
         if let content, !content.isEmpty {
@@ -342,6 +346,18 @@ actor ProxmoxAPIService {
         return try await delete(
             ProxmoxEndpoint.guest(node: node, type: type, vmid: vmid),
             form: ["purge": purge ? "1" : "0"]
+        )
+    }
+
+    @discardableResult
+    func cloneGuest(_ request: GuestCloneRequest) async throws -> String {
+        try await post(
+            ProxmoxEndpoint.guestClone(
+                node: request.node,
+                type: request.type,
+                vmid: request.vmid
+            ),
+            form: request.form
         )
     }
 

@@ -529,6 +529,10 @@ final class ProxmoxManagerTests: XCTestCase {
             "/nodes/pve1/qemu/121/config"
         )
         XCTAssertEqual(
+            ProxmoxEndpoint.guestClone(node: "pve1", type: .lxc, vmid: 220),
+            "/nodes/pve1/lxc/220/clone"
+        )
+        XCTAssertEqual(
             ProxmoxEndpoint.storageContent(
                 node: "pve1",
                 storage: "local/templates",
@@ -614,6 +618,39 @@ final class ProxmoxManagerTests: XCTestCase {
             data.flatMap { String(data: $0, encoding: .utf8) },
             "name=web%20%26%20api&net0=virtio%2Cbridge%3Dvmbr0"
         )
+    }
+
+    func testGuestCloneRequestBuildsTypeSpecificForm() {
+        let vm = GuestCloneRequest(
+            node: "pve1",
+            type: .qemu,
+            vmid: 120,
+            newVMID: 121,
+            name: "web-copy",
+            description: "Independent copy",
+            storage: "local-lvm",
+            full: true
+        )
+        let container = GuestCloneRequest(
+            node: "pve1",
+            type: .lxc,
+            vmid: 220,
+            newVMID: 221,
+            name: "ct-copy",
+            description: "",
+            storage: nil,
+            full: true
+        )
+
+        XCTAssertEqual(vm.form["newid"], "121")
+        XCTAssertEqual(vm.form["name"], "web-copy")
+        XCTAssertNil(vm.form["hostname"])
+        XCTAssertEqual(vm.form["description"], "Independent copy")
+        XCTAssertEqual(vm.form["storage"], "local-lvm")
+        XCTAssertEqual(container.form["hostname"], "ct-copy")
+        XCTAssertNil(container.form["description"])
+        XCTAssertNil(container.form["storage"])
+        XCTAssertEqual(container.form["full"], "1")
     }
 
     // MARK: - Backup API contracts

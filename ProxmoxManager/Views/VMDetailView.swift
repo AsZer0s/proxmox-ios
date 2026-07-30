@@ -15,6 +15,7 @@ struct VMDetailView: View {
     @State private var showingCreateSnapshot = false
     @State private var showingEditGuest = false
     @State private var showingDeleteGuest = false
+    @State private var showingCloneGuest = false
 
     var body: some View {
         List {
@@ -37,6 +38,14 @@ struct VMDetailView: View {
                                 showingEditGuest = true
                             } label: {
                                 Label("Edit Guest", systemImage: "pencil")
+                            }
+                        }
+
+                        if canCloneGuest {
+                            Button {
+                                showingCloneGuest = true
+                            } label: {
+                                Label("Clone Guest", systemImage: "square.on.square")
                             }
                         }
 
@@ -172,6 +181,10 @@ struct VMDetailView: View {
                 dismiss()
             }
         }
+        .sheet(isPresented: $showingCloneGuest) {
+            CloneGuestView(guest: guest) {}
+                .environmentObject(appState)
+        }
         .overlay {
             if model.isPerformingAction {
                 Color.black.opacity(0.1).ignoresSafeArea()
@@ -214,8 +227,12 @@ struct VMDetailView: View {
         appState.hasPrivilege("VM.Allocate", for: guest.vmid)
     }
 
+    private var canCloneGuest: Bool {
+        appState.hasPrivilege("VM.Clone", for: guest.vmid)
+    }
+
     private var canManageGuest: Bool {
-        canEditGuest || canDeleteGuest
+        canEditGuest || canCloneGuest || canDeleteGuest
     }
 
     @ViewBuilder
