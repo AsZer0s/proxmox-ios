@@ -54,6 +54,9 @@ struct NodesView: View {
                 await model.load(service: appState.service)
                 await model.refreshLoop(service: appState.service)
             }
+            .onDisappear {
+                model.stopRefresh()
+            }
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
                     Task {
@@ -71,12 +74,9 @@ struct NodesView: View {
 private struct NodeRow: View {
     let node: ProxmoxNode
 
-    /// CPU is a raw cpuload value, not 0-1. Normalize against maxcpu.
+    /// PVE reports CPU utilization as a 0...1 fraction for the whole node.
     private var cpuFraction: Double? {
-        guard let cpu = node.cpu, let maxcpu = node.maxcpu, maxcpu > 0 else {
-            return nil
-        }
-        return min(cpu / Double(maxcpu), 1.0)
+        node.cpuFraction
     }
 
     var body: some View {

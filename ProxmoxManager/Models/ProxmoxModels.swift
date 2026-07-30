@@ -100,29 +100,38 @@ struct ProxmoxServer: Identifiable, Codable, Hashable {
 
 // MARK: - Authentication
 
-/// Ticket payload returned by `/access/ticket` — also covers the TFA challenge case
-/// where `ticket` is empty and `tfa` is present.
+/// Ticket payload returned by `/access/ticket`.
+///
+/// For modern PVE TFA logins, the first response contains a half-authenticated
+/// ticket whose payload starts with `!tfa!`. That ticket must be sent back as
+/// `tfa-challenge` when submitting the second factor.
 struct ProxmoxTicketPayload: Codable {
     let ticket: String
     let csrfToken: String
     let username: String
-    let tfa: String?
-    let tfaChallenge: String?
 
     enum CodingKeys: String, CodingKey {
         case ticket
         case csrfToken = "CSRFPreventionToken"
         case username
-        case tfa
-        case tfaChallenge = "tfa-challenge"
     }
-}
 
-/// TFA challenge info extracted from the login response.
-struct ProxmoxTFAChallenge: Codable, Sendable {
-    let tfa: String
-    let tfaChallenge: String
-    let username: String
+    init(ticket: String, csrfToken: String, username: String) {
+        self.ticket = ticket
+        self.csrfToken = csrfToken
+        self.username = username
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ticket = try container.decodeIfPresent(String.self, forKey: .ticket) ?? ""
+        csrfToken = try container.decodeIfPresent(String.self, forKey: .csrfToken) ?? ""
+        username = try container.decode(String.self, forKey: .username)
+    }
+
+    var requiresTFA: Bool {
+        ticket.contains(":!tfa!")
+    }
 }
 
 /// Generic Proxmox response envelope. Every endpoint wraps its payload in `data`.
@@ -195,6 +204,7 @@ struct ProxmoxNode: Codable, Identifiable, Hashable {
     let level: String?
 
     var isOnline: Bool { status.lowercased() == "online" }
+    var cpuFraction: Double? { cpu.map { min(max($0, 0), 1) } }
 }
 
 /// Detailed node status from `/nodes/{node}/status`.
@@ -413,19 +423,75 @@ struct GuestSnapshot: Codable, Hashable, Identifiable {
 // MARK: - Permissions
 
 struct ProxmoxPermissions: Codable, Hashable {
-    let permissions: [String: [String: [String]]]?
+    /// PVE returns `path -> privilege -> propagate`, without an enclosing key.
+    let paths: [String: [String: Bool]]
 
-    /// Check if the current user has a specific privilege on a path.
-    /// PVE permission format: path -> { user/group -> [privileges] }
+    private struct PermissionFlag: Codable {
+        let value: Bool
+
+        init(_ value: Bool) {
+            self.value = value
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let bool = try? container.decode(Bool.self) {
+                value = bool
+            } else if let int = try? container.decode(Int.self) {
+                value = int != 0
+            } else if let string = try? container.decode(String.self) {
+                value = string == "1" || string.lowercased() == "true"
+            } else {
+                throw DecodingError.typeMismatch(
+                    Bool.self,
+                    DecodingError.Context(
+                        codingPath: decoder.codingPath,
+                        debugDescription: "Expected a boolean-compatible permission flag."
+                    )
+                )
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(value)
+        }
+    }
+
+    init(paths: [String: [String: Bool]]) {
+        self.paths = paths
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let decoded = try container.decode([String: [String: PermissionFlag]].self)
+        paths = decoded.mapValues { privileges in
+            privileges.mapValues(\.value)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(paths.mapValues { privileges in
+            privileges.mapValues(PermissionFlag.init)
+        })
+    }
+
+    /// Check an effective privilege on an exact path or a propagating parent.
     func hasPrivilege(_ privilege: String, on path: String) -> Bool {
-        guard let permissions else { return false }
-        // Check root-level permissions first
-        if let rootPerms = permissions[""], rootPerms.values.contains(where: { $0.contains(privilege) }) {
+        let normalized = path.isEmpty ? "/" : (path.hasPrefix("/") ? path : "/\(path)")
+
+        if paths[normalized]?[privilege] != nil {
             return true
         }
-        // Check specific path
-        if let pathPerms = permissions[path], pathPerms.values.contains(where: { $0.contains(privilege) }) {
-            return true
+
+        var parent = normalized
+        while parent != "/" {
+            guard let slash = parent.lastIndex(of: "/") else { break }
+            parent = slash == parent.startIndex ? "/" : String(parent[..<slash])
+            if paths[parent]?[privilege] == true {
+                return true
+            }
         }
         return false
     }
@@ -467,8 +533,56 @@ struct ProxmoxStorageContent: Codable, Identifiable, Hashable {
     let content: String?
     let notes: String?
     let vmid: Int?
+    let ctime: Int64?
+    let protectedFlag: Int?
 
     var id: String { volid }
+
+    enum CodingKeys: String, CodingKey {
+        case volid, format, size, used, content, notes, vmid, ctime
+        case protectedFlag = "protected"
+    }
+
+    init(
+        volid: String,
+        format: String?,
+        size: Int64?,
+        used: Int64?,
+        content: String?,
+        notes: String?,
+        vmid: Int?,
+        ctime: Int64? = nil,
+        protectedFlag: Int? = nil
+    ) {
+        self.volid = volid
+        self.format = format
+        self.size = size
+        self.used = used
+        self.content = content
+        self.notes = notes
+        self.vmid = vmid
+        self.ctime = ctime
+        self.protectedFlag = protectedFlag
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        volid = try container.decode(String.self, forKey: .volid)
+        format = try container.decodeIfPresent(String.self, forKey: .format)
+        size = try container.decodeIfPresent(Int64.self, forKey: .size)
+        used = try container.decodeIfPresent(Int64.self, forKey: .used)
+        content = try container.decodeIfPresent(String.self, forKey: .content)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        vmid = try container.decodeIfPresent(Int.self, forKey: .vmid)
+        ctime = try container.decodeIfPresent(Int64.self, forKey: .ctime)
+        if let value = try? container.decode(Int.self, forKey: .protectedFlag) {
+            protectedFlag = value
+        } else if let value = try? container.decode(Bool.self, forKey: .protectedFlag) {
+            protectedFlag = value ? 1 : 0
+        } else {
+            protectedFlag = nil
+        }
+    }
 
     /// Friendly name extracted from volid (storage:filename).
     var displayName: String {
@@ -481,16 +595,70 @@ struct ProxmoxStorageContent: Codable, Identifiable, Hashable {
 
 // MARK: - Backups
 
-struct ProxmoxBackup: Codable, Identifiable, Hashable {
+struct ProxmoxBackupJob: Codable, Identifiable, Hashable {
     let id: String
-    let vmid: Int
-    let storage: String
-    let notes: String?
-    let starttime: Int64?
-    let endtime: Int64?
-    let size: Int64?
+    let node: String?
+    let storage: String?
+    let schedule: String?
+    let vmid: String?
+    let comment: String?
     let mode: String?
-    let status: String?
+    let enabled: Bool?
+    let all: Bool?
+
+    var isEnabled: Bool { enabled != false }
+
+    enum CodingKeys: String, CodingKey {
+        case id, node, storage, schedule, vmid, comment, mode, enabled, all
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        node = try container.decodeIfPresent(String.self, forKey: .node)
+        storage = try container.decodeIfPresent(String.self, forKey: .storage)
+        schedule = try container.decodeIfPresent(String.self, forKey: .schedule)
+        if let value = try? container.decode(String.self, forKey: .vmid) {
+            vmid = value
+        } else if let value = try? container.decode(Int.self, forKey: .vmid) {
+            vmid = String(value)
+        } else {
+            vmid = nil
+        }
+        comment = try container.decodeIfPresent(String.self, forKey: .comment)
+        mode = try container.decodeIfPresent(String.self, forKey: .mode)
+        enabled = Self.decodeBool(container, key: .enabled)
+        all = Self.decodeBool(container, key: .all)
+    }
+
+    private static func decodeBool(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        key: CodingKeys
+    ) -> Bool? {
+        if let value = try? container.decode(Bool.self, forKey: key) {
+            return value
+        }
+        if let value = try? container.decode(Int.self, forKey: key) {
+            return value != 0
+        }
+        if let value = try? container.decode(String.self, forKey: key) {
+            return value == "1" || value.lowercased() == "true"
+        }
+        return nil
+    }
+}
+
+struct ProxmoxBackupFile: Identifiable, Hashable {
+    let volid: String
+    let storage: String
+    let vmid: Int?
+    let size: Int64?
+    let createdAt: Int64?
+    let notes: String?
+    let format: String?
+    let isProtected: Bool
+
+    var id: String { volid }
 }
 
 // MARK: - Historical / RRD

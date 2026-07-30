@@ -39,6 +39,9 @@ struct NodeDetailView: View {
             await model.load(service: appState.service, node: node)
             await model.refreshLoop(service: appState.service, node: node)
         }
+        .onDisappear {
+            model.stopRefresh()
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 Task {
@@ -68,10 +71,9 @@ struct NodeDetailView: View {
     @ViewBuilder
     private var overviewSection: some View {
         Section {
-            // CPU: normalize against maxcpu — API returns raw cpuload, not 0-1 fraction
+            // PVE returns node CPU utilization as a 0...1 fraction.
             let rawCPU = model.status?.cpu ?? node.cpu
-            let maxCPU = Double(node.maxcpu ?? 8)
-            let cpuFraction = rawCPU.map { maxCPU > 0 ? min($0 / maxCPU, 1.0) : 0 } ?? 0
+            let cpuFraction = rawCPU.map { min(max($0, 0), 1) } ?? 0
 
             let memoryUsed = model.status?.memory?.used ?? node.mem
             let memoryTotal = model.status?.memory?.total ?? node.maxmem

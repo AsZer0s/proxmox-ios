@@ -41,6 +41,9 @@ struct SettingsView: View {
                     .disabled(!appState.canUseFaceID)
                     .onChange(of: faceIDOn) { newValue in
                         appState.faceIDEnabled = newValue
+                        if newValue {
+                            appState.appLocked = true
+                        }
                     }
                     .onAppear {
                         faceIDOn = appState.faceIDEnabled

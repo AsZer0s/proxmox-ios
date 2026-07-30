@@ -22,6 +22,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Proxmox Manager connects directly to Proxmox servers on your local network.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to protect access to your saved Proxmox servers.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

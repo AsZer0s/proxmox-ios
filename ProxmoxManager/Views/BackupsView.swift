@@ -1,46 +1,33 @@
 import SwiftUI
 
-/// Shows backup jobs and history for a node.
+/// Shows cluster backup schedules relevant to a node and backup archives
+/// stored on that node's backup-capable storage.
 struct BackupsView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var backups: [ProxmoxBackup] = []
+    @State private var jobs: [ProxmoxBackupJob] = []
+    @State private var files: [ProxmoxBackupFile] = []
     @State private var isLoading = true
     @State private var error: String?
-    @State private var selectedBackupID: String?
-    @State private var backupLog: [String] = []
 
     let node: String
 
     var body: some View {
         Group {
-            if isLoading && backups.isEmpty {
+            if isLoading && jobs.isEmpty && files.isEmpty {
                 ProgressView("Loading backups…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error, backups.isEmpty {
+            } else if let error, jobs.isEmpty && files.isEmpty {
                 ErrorStateView(message: error) {
                     Task { await load() }
                 }
-            } else if backups.isEmpty {
-                ContentUnavailableCompat(
-                    title: "No Backups",
-                    systemImage: "clock.arrow.circlepath",
-                    description: "No backup jobs configured on this node."
-                )
             } else {
-                List(backups) { backup in
-                    Section {
-                        BackupRow(backup: backup)
-                            .onTapGesture {
-                                selectedBackupID = backup.id
-                                Task { await loadLog(id: backup.id) }
-                            }
-                        if selectedBackupID == backup.id && !backupLog.isEmpty {
-                            DisclosureGroup("Task Log", isExpanded: .constant(true)) {
-                                ForEach(Array(backupLog.enumerated()), id: \.offset) { _, line in
-                                    Text(line)
-                                        .font(.caption.monospaced())
-                                }
-                            }
+                List {
+                    jobsSection
+                    archivesSection
+                    if let error {
+                        Section {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
                         }
                     }
                 }
@@ -52,81 +39,153 @@ struct BackupsView: View {
         .task { await load() }
     }
 
+    @ViewBuilder
+    private var jobsSection: some View {
+        Section {
+            if jobs.isEmpty {
+                Text("No backup schedules apply to this node.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(jobs) { job in
+                    BackupJobRow(job: job)
+                }
+            }
+        } header: {
+            Text("Schedules")
+        }
+    }
+
+    @ViewBuilder
+    private var archivesSection: some View {
+        Section {
+            if files.isEmpty {
+                Text("No backup archives were found on accessible storage.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(files) { file in
+                    BackupFileRow(file: file)
+                }
+            }
+        } header: {
+            Text("Archives (\(files.count))")
+        }
+    }
+
     private func load() async {
         guard let service = appState.service else { return }
         isLoading = true
         error = nil
+
+        async let jobsRequest = service.fetchBackupJobs(node: node)
+        async let filesRequest = service.fetchBackupFiles(node: node)
+
         do {
-            backups = try await service.fetchBackups(node: node)
+            jobs = try await jobsRequest
         } catch {
             self.error = error.localizedDescription
         }
-        isLoading = false
-    }
 
-    private func loadLog(id: String) async {
-        guard let service = appState.service else { return }
         do {
-            let entries = try await service.fetchBackupLog(node: node, id: id)
-            backupLog = entries.map(\.t)
+            files = try await filesRequest
         } catch {
-            backupLog = ["Could not load log: \(error.localizedDescription)"]
+            if self.error == nil {
+                self.error = error.localizedDescription
+            }
         }
+        isLoading = false
     }
 }
 
-private struct BackupRow: View {
-    let backup: ProxmoxBackup
+private struct BackupJobRow: View {
+    let job: ProxmoxBackupJob
+
+    private var title: String {
+        guard let comment = job.comment, !comment.isEmpty else { return job.id }
+        return comment
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: "clock.arrow.circlepath")
-                    .foregroundStyle(backup.status == "running" ? .blue : .secondary)
-
-                Text("VM \(backup.vmid)")
+                Image(systemName: job.isEnabled ? "calendar.badge.clock" : "calendar.badge.exclamationmark")
+                    .foregroundStyle(job.isEnabled ? .blue : .secondary)
+                Text(title)
                     .font(.headline)
-
                 Spacer()
+                Text(job.isEnabled ? String(localized: "Enabled") : String(localized: "Disabled"))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(job.isEnabled ? .green : .secondary)
+            }
 
-                if let status = backup.status {
-                    Text(status)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(status == "running" ? .blue : .secondary)
-                }
+            if let schedule = job.schedule {
+                Label(schedule, systemImage: "clock")
             }
 
             HStack(spacing: 12) {
-                if let storage = Optional(backup.storage) {
+                if let storage = job.storage {
                     Label(storage, systemImage: "externaldrive")
                 }
-                if let mode = backup.mode {
-                    Text(mode)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.secondary.opacity(0.15), in: Capsule())
+                if job.all == true {
+                    Text("All guests")
+                } else if let vmid = job.vmid {
+                    Text("VMIDs: \(vmid)")
+                }
+                if let mode = job.mode {
+                    Text(mode.capitalized)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct BackupFileRow: View {
+    let file: ProxmoxBackupFile
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: file.isProtected ? "lock.shield.fill" : "archivebox")
+                    .foregroundStyle(file.isProtected ? .green : .blue)
+                if let vmid = file.vmid {
+                    Text("VM \(vmid)")
+                        .font(.headline)
+                } else {
+                    Text(file.volid)
+                        .font(.headline)
+                }
+                Spacer()
+                if let size = file.size {
+                    Text(size.formattedBytes)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text(file.volid)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            HStack(spacing: 12) {
+                Label(file.storage, systemImage: "externaldrive")
+                if let format = file.format {
+                    Text(format.uppercased())
+                }
+                if let createdAt = file.createdAt {
+                    Text(Date(timeIntervalSince1970: Double(createdAt)), style: .date)
                 }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            if let starttime = backup.starttime {
-                HStack {
-                    Text("Started: \(Date(timeIntervalSince1970: Double(starttime)), style: .date)")
-                    if let endtime = backup.endtime {
-                        Text("· \(Date(timeIntervalSince1970: Double(endtime)), style: .time)")
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            if let size = backup.size {
-                HStack {
-                    Text("Size: \(size.formattedBytes)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            if let notes = file.notes, !notes.isEmpty {
+                Text(notes)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
         }
         .padding(.vertical, 4)

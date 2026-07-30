@@ -39,6 +39,9 @@ struct VMDetailView: View {
             await model.refresh(service: appState.service, guest: guest)
             await model.refreshLoop(service: appState.service, guest: guest)
         }
+        .onDisappear {
+            model.stopRefresh()
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 Task {

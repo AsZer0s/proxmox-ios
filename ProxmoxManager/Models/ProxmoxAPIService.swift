@@ -2,6 +2,18 @@ import CryptoKit
 import Foundation
 import Security
 
+enum ProxmoxEndpoint {
+    static let backupJobs = "/cluster/backup"
+
+    static func backupArchives(node: String, storage: String) -> String {
+        "/nodes/\(node)/storage/\(storage.pathEscaped)/content?content=backup"
+    }
+
+    static func vzdump(node: String) -> String {
+        "/nodes/\(node)/vzdump"
+    }
+}
+
 // MARK: - Errors
 
 enum ProxmoxError: LocalizedError {
@@ -60,7 +72,7 @@ actor ProxmoxAPIService {
     private var ticket: String?
     private var csrfToken: String?
     private var tokenValue: String?
-    private var tfaChallenge: ProxmoxTFAChallenge?
+    private var tfaChallengeTicket: String?
     /// Stored password for transparent 401 retries.
     private var storedPassword: String?
 
@@ -100,7 +112,11 @@ actor ProxmoxAPIService {
     func authenticate(password: String) async throws {
         storedPassword = password
 
-        let body = "username=\(server.fullUsername.formURLEncoded)&password=\(password.formURLEncoded)"
+        let body = [
+            "username=\(server.fullUsername.formURLEncoded)",
+            "password=\(password.formURLEncoded)",
+            "new-format=1",
+        ].joined(separator: "&")
 
         let (data, response) = try await postLogin(body: body)
         guard let http = response as? HTTPURLResponse else {
@@ -115,13 +131,8 @@ actor ProxmoxAPIService {
 
         let decoded = try JSONDecoder().decode(ProxmoxResponse<ProxmoxTicketPayload>.self, from: data)
 
-        // If ticket is empty, PVE is requesting TOTP second factor.
-        if decoded.data.ticket.isEmpty, let tfaChallenge = decoded.data.tfa {
-            self.tfaChallenge = ProxmoxTFAChallenge(
-                tfa: tfaChallenge,
-                tfaChallenge: decoded.data.tfaChallenge ?? tfaChallenge,
-                username: decoded.data.username
-            )
+        if decoded.data.requiresTFA {
+            self.tfaChallengeTicket = decoded.data.ticket
             throw ProxmoxError.tfaRequired
         }
 
@@ -135,14 +146,19 @@ actor ProxmoxAPIService {
 
     /// Complete a TOTP challenge. Call this after receiving `.tfaRequired`.
     func authenticateTOTP(code: String) async throws {
-        guard let challenge = tfaChallenge else {
+        guard let challengeTicket = tfaChallengeTicket else {
             throw ProxmoxError.authenticationFailed("No pending TFA challenge.")
         }
+        let trimmedCode = code.trimmed
+        guard !trimmedCode.isEmpty else {
+            throw ProxmoxError.authenticationFailed("Enter a TOTP code.")
+        }
 
-        let body = "username=\(server.fullUsername.formURLEncoded)" +
-            "&password=\(challenge.tfa.formURLEncoded)" +
-            "&tfa-challenge=\(challenge.tfaChallenge.formURLEncoded)" +
-            "&tfa-code=\(code.formURLEncoded)"
+        let body = Self.totpFormBody(
+            username: server.fullUsername,
+            code: trimmedCode,
+            challengeTicket: challengeTicket
+        )
 
         let (data, response) = try await postLogin(body: body)
         guard let http = response as? HTTPURLResponse else {
@@ -157,17 +173,30 @@ actor ProxmoxAPIService {
 
         do {
             let decoded = try JSONDecoder().decode(ProxmoxResponse<ProxmoxTicketPayload>.self, from: data)
-            guard !decoded.data.ticket.isEmpty else {
+            guard !decoded.data.ticket.isEmpty, !decoded.data.requiresTFA else {
                 throw ProxmoxError.authenticationFailed("TOTP verification failed.")
             }
             self.ticket = decoded.data.ticket
             self.csrfToken = decoded.data.csrfToken
-            self.tfaChallenge = nil
+            self.tfaChallengeTicket = nil
         } catch let error as ProxmoxError {
             throw error
         } catch {
             throw ProxmoxError.decodingFailed(error.localizedDescription)
         }
+    }
+
+    static func totpFormBody(
+        username: String,
+        code: String,
+        challengeTicket: String
+    ) -> String {
+        [
+            "username=\(username.formURLEncoded)",
+            "password=\("totp:\(code)".formURLEncoded)",
+            "tfa-challenge=\(challengeTicket.formURLEncoded)",
+            "new-format=1",
+        ].joined(separator: "&")
     }
 
     private func postLogin(body: String) async throws -> (Data, URLResponse) {
@@ -197,6 +226,7 @@ actor ProxmoxAPIService {
     func logout() {
         ticket = nil
         csrfToken = nil
+        tfaChallengeTicket = nil
     }
 
     // MARK: Reads
@@ -369,12 +399,48 @@ actor ProxmoxAPIService {
 
     // MARK: Backups
 
-    func fetchBackups(node: String) async throws -> [ProxmoxBackup] {
-        try await get("/nodes/\(node)/backup", as: [ProxmoxBackup].self)
+    func fetchBackupJobs(node: String) async throws -> [ProxmoxBackupJob] {
+        try await get(ProxmoxEndpoint.backupJobs, as: [ProxmoxBackupJob].self)
+            .filter { $0.node == nil || $0.node == node }
     }
 
-    func fetchBackupLog(node: String, id: String) async throws -> [ProxmoxTaskLogEntry] {
-        try await get("/nodes/\(node)/backup/\(id.pathEscaped)/log", as: [ProxmoxTaskLogEntry].self)
+    func fetchBackupFiles(node: String) async throws -> [ProxmoxBackupFile] {
+        let storages = try await fetchStorages(node: node)
+            .filter { $0.isAvailable && $0.storageTypes.contains("backup") }
+
+        var files: [ProxmoxBackupFile] = []
+        var firstError: Error?
+        var failedStorageCount = 0
+
+        for storage in storages {
+            do {
+                let content: [ProxmoxStorageContent] = try await get(
+                    ProxmoxEndpoint.backupArchives(node: node, storage: storage.storage),
+                    as: [ProxmoxStorageContent].self
+                )
+                files.append(contentsOf: content.compactMap { item in
+                    guard item.content == "backup" else { return nil }
+                    return ProxmoxBackupFile(
+                        volid: item.volid,
+                        storage: storage.storage,
+                        vmid: item.vmid,
+                        size: item.size,
+                        createdAt: item.ctime,
+                        notes: item.notes,
+                        format: item.format,
+                        isProtected: item.protectedFlag == 1
+                    )
+                })
+            } catch {
+                failedStorageCount += 1
+                if firstError == nil { firstError = error }
+            }
+        }
+
+        if !storages.isEmpty, failedStorageCount == storages.count, let firstError {
+            throw firstError
+        }
+        return files.sorted { ($0.createdAt ?? 0) > ($1.createdAt ?? 0) }
     }
 
     @discardableResult
@@ -389,7 +455,7 @@ actor ProxmoxAPIService {
             "storage": storage,
             "mode": mode,
         ]
-        return try await post("/nodes/\(node)/backup", form: form)
+        return try await post(ProxmoxEndpoint.vzdump(node: node), form: form)
     }
 
     // MARK: RRD / Historical data
@@ -437,8 +503,15 @@ actor ProxmoxAPIService {
 
                 // For ticket auth with stored password, attempt transparent renewal
                 if server.authMethod == .ticket, let password = storedPassword {
-                    // Re-authenticate
-                    try await authenticate(password: password)
+                    do {
+                        try await authenticate(password: password)
+                    } catch ProxmoxError.tfaRequired {
+                        NotificationCenter.default.post(
+                            name: .proxmoxAuthenticationExpired,
+                            object: server.id
+                        )
+                        throw ProxmoxError.notAuthenticated
+                    }
 
                     // Retry the original request with new credentials
                     var retryRequest = request

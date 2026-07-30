@@ -18,7 +18,6 @@ struct CertificateConfirmation: Identifiable {
 struct TFAChallengeState: Identifiable {
     let id = UUID()
     let serverID: UUID
-    let challenge: ProxmoxTFAChallenge
 }
 
 @MainActor
@@ -63,10 +62,12 @@ final class AppState: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let serverID = notification.object as? UUID,
-                  self?.connectedServer?.id == serverID else { return }
-            self?.disconnect()
-            self?.lastError = ProxmoxError.notAuthenticated.localizedDescription
+            Task { @MainActor [weak self] in
+                guard let serverID = notification.object as? UUID,
+                      self?.connectedServer?.id == serverID else { return }
+                self?.disconnect()
+                self?.lastError = ProxmoxError.notAuthenticated.localizedDescription
+            }
         }
         // Auto-lock if Face ID is enabled
         if UserDefaults.standard.bool(forKey: "faceIDEnabled") {
@@ -96,13 +97,12 @@ final class AppState: ObservableObject {
     }
 
     /// Check if the current user has a specific PVE privilege on a path.
-    /// Returns `true` when permissions are unknown (nil) so that restricted
-    /// accounts without ACL read access aren't incorrectly blocked.
+    /// Unknown permissions fail closed for destructive controls.
     func hasPrivilege(_ privilege: String, for vmid: Int? = nil) -> Bool {
-        guard let permissions else { return true }
+        guard let permissions else { return false }
         let vmPath = vmid.map { "/vms/\($0)" } ?? ""
         if !vmPath.isEmpty, permissions.hasPrivilege(privilege, on: vmPath) { return true }
-        return permissions.hasPrivilege(privilege, on: "")
+        return permissions.hasPrivilege(privilege, on: "/")
     }
 
     // MARK: - Server management
@@ -181,13 +181,10 @@ final class AppState: ObservableObject {
                     )
                     self.lastError = nil
                 case .tfaRequired:
-                    let newService = ProxmoxAPIService(server: server)
-                    try? await newService.authenticate(password: secret)
-                    self.service = newService
+                    self.service = service
                     self.connectedServer = server
                     self.pendingTFAChallenge = TFAChallengeState(
-                        serverID: server.id,
-                        challenge: ProxmoxTFAChallenge(tfa: "", tfaChallenge: "", username: server.fullUsername)
+                        serverID: server.id
                     )
                 default:
                     self.lastError = error.localizedDescription
@@ -204,17 +201,26 @@ final class AppState: ObservableObject {
 
     /// Complete a TOTP challenge during login.
     func submitTOTP(code: String) async {
-        guard let service = service, let challenge = pendingTFAChallenge else { return }
+        guard let service = service, pendingTFAChallenge != nil else { return }
         pendingTFAChallenge = nil
         do {
             try await service.authenticateTOTP(code: code)
             self.connectionState = .connected
+            self.permissions = try? await service.fetchPermissions()
         } catch {
             self.lastError = error.localizedDescription
             self.connectionState = .disconnected
             self.service = nil
             self.connectedServer = nil
         }
+    }
+
+    func cancelPendingTFA() {
+        pendingTFAChallenge = nil
+        Task { await service?.logout() }
+        service = nil
+        connectedServer = nil
+        connectionState = .disconnected
     }
 
     /// Refresh permissions for the current server.

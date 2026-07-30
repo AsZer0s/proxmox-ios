@@ -97,6 +97,9 @@ struct VMListView: View {
                 await model.load(service: appState.service)
                 await model.refreshLoop(service: appState.service)
             }
+            .onDisappear {
+                model.stopRefresh()
+            }
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
                     Task {

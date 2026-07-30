@@ -240,17 +240,29 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(resp.data.ticket, "PVE:ticket")
         XCTAssertEqual(resp.data.csrfToken, "token123")
         XCTAssertEqual(resp.data.username, "root@pam")
-        XCTAssertNil(resp.data.tfa)
+        XCTAssertFalse(resp.data.requiresTFA)
     }
 
     func testTicketPayloadTFAChallenge() throws {
         let data = Data("""
-        {"data":{"ticket":"","CSRFPreventionToken":"","username":"root@pam","tfa":"totp","tfa-challenge":"challenge123"}}
+        {"data":{"ticket":"PVE:!tfa!%7B%22totp%22%3Atrue%7D:challenge","username":"root@pam"}}
         """.utf8)
         let resp = try JSONDecoder().decode(ProxmoxResponse<ProxmoxTicketPayload>.self, from: data)
-        XCTAssertTrue(resp.data.ticket.isEmpty)
-        XCTAssertEqual(resp.data.tfa, "totp")
-        XCTAssertEqual(resp.data.tfaChallenge, "challenge123")
+        XCTAssertTrue(resp.data.requiresTFA)
+        XCTAssertEqual(resp.data.csrfToken, "")
+    }
+
+    func testTOTPFormUsesOfficialChallengeFlow() {
+        let body = ProxmoxAPIService.totpFormBody(
+            username: "root@pam",
+            code: "123456",
+            challengeTicket: "PVE:!tfa!challenge"
+        )
+
+        XCTAssertEqual(
+            body,
+            "username=root%40pam&password=totp%3A123456&tfa-challenge=PVE%3A%21tfa%21challenge&new-format=1"
+        )
     }
 
     // MARK: - ProxmoxResponse
@@ -302,6 +314,23 @@ final class ProxmoxManagerTests: XCTestCase {
             vmid: nil
         )
         XCTAssertEqual(content.displayName, "simple-id")
+    }
+
+    func testStorageContentDecodesBooleanProtectedFlag() throws {
+        let data = Data(#"""
+        {
+          "volid": "pbs:backup/vm/100/2026-07-30T00:00:00Z",
+          "content": "backup",
+          "vmid": 100,
+          "size": 1024,
+          "ctime": 1785369600,
+          "protected": true
+        }
+        """#.utf8)
+
+        let content = try JSONDecoder().decode(ProxmoxStorageContent.self, from: data)
+        XCTAssertEqual(content.protectedFlag, 1)
+        XCTAssertEqual(content.ctime, 1_785_369_600)
     }
 
     // MARK: - GuestSnapshot
@@ -376,5 +405,79 @@ final class ProxmoxManagerTests: XCTestCase {
         )
         XCTAssertTrue(storage.isAvailable)
         XCTAssertEqual(storage.storageTypes, ["iso", "vztmpl", "backup"])
+    }
+
+    // MARK: - Official permission response shape
+
+    func testPermissionsDecodeOfficialShapeAndInheritance() throws {
+        let data = Data(#"""
+        {
+          "data": {
+            "/": {"Sys.Audit": 1},
+            "/vms": {"VM.PowerMgmt": true},
+            "/vms/100": {"VM.Snapshot": 0}
+          }
+        }
+        """#.utf8)
+
+        let response = try JSONDecoder().decode(
+            ProxmoxResponse<ProxmoxPermissions>.self,
+            from: data
+        )
+
+        XCTAssertTrue(response.data.hasPrivilege("Sys.Audit", on: "/"))
+        XCTAssertTrue(response.data.hasPrivilege("VM.PowerMgmt", on: "/vms/101"))
+        XCTAssertTrue(response.data.hasPrivilege("VM.Snapshot", on: "/vms/100"))
+        XCTAssertFalse(response.data.hasPrivilege("VM.Snapshot", on: "/vms/101"))
+    }
+
+    // MARK: - Backup API contracts
+
+    func testBackupEndpointsMatchPVEAPI() {
+        XCTAssertEqual(ProxmoxEndpoint.backupJobs, "/cluster/backup")
+        XCTAssertEqual(ProxmoxEndpoint.vzdump(node: "pve1"), "/nodes/pve1/vzdump")
+        XCTAssertEqual(
+            ProxmoxEndpoint.backupArchives(node: "pve1", storage: "backup/store"),
+            "/nodes/pve1/storage/backup%2Fstore/content?content=backup"
+        )
+    }
+
+    func testBackupJobDecodesBooleanCompatibleFields() throws {
+        let data = Data(#"""
+        {
+          "id": "backup-001",
+          "node": "pve1",
+          "storage": "pbs",
+          "schedule": "daily",
+          "vmid": 100,
+          "mode": "snapshot",
+          "enabled": 1,
+          "all": "0"
+        }
+        """#.utf8)
+
+        let job = try JSONDecoder().decode(ProxmoxBackupJob.self, from: data)
+        XCTAssertEqual(job.vmid, "100")
+        XCTAssertTrue(job.isEnabled)
+        XCTAssertEqual(job.all, false)
+    }
+
+    // MARK: - Node CPU
+
+    func testNodeCPUIsAlreadyAClusterWideFraction() {
+        let node = ProxmoxNode(
+            node: "pve1",
+            status: "online",
+            cpu: 0.42,
+            maxcpu: 8,
+            mem: nil,
+            maxmem: nil,
+            disk: nil,
+            maxdisk: nil,
+            uptime: nil,
+            level: nil
+        )
+
+        XCTAssertEqual(node.cpuFraction, 0.42)
     }
 }

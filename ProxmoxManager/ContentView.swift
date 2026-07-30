@@ -5,19 +5,48 @@ import SwiftUI
 /// Shows the Face ID lock screen when enabled.
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var privacyCoverVisible = false
 
     var body: some View {
-        Group {
-            if appState.appLocked {
-                AppLockView()
-            } else if appState.isConnected {
-                MainDashboardView()
-            } else {
-                ServerListView()
+        ZStack {
+            Group {
+                if appState.appLocked {
+                    AppLockView()
+                } else if appState.isConnected {
+                    MainDashboardView()
+                } else {
+                    ServerListView()
+                }
+            }
+
+            if privacyCoverVisible {
+                Color(uiColor: .systemBackground)
+                    .ignoresSafeArea()
+                    .overlay {
+                        Image(systemName: "lock.shield")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.secondary)
+                    }
             }
         }
         .animation(.default, value: appState.isConnected)
         .animation(.default, value: appState.appLocked)
+        .onChange(of: scenePhase) { phase in
+            switch phase {
+            case .active:
+                privacyCoverVisible = false
+            case .inactive:
+                privacyCoverVisible = appState.faceIDEnabled
+            case .background:
+                privacyCoverVisible = appState.faceIDEnabled
+                if appState.faceIDEnabled {
+                    appState.appLocked = true
+                }
+            @unknown default:
+                privacyCoverVisible = appState.faceIDEnabled
+            }
+        }
     }
 }
 
@@ -109,7 +138,7 @@ struct ServerListView: View {
                 }
                 Button("Cancel", role: .cancel) {
                     totpCode = ""
-                    appState.pendingTFAChallenge = nil
+                    appState.cancelPendingTFA()
                 }
             } message: {
                 Text("Enter your two-factor authentication code.")
