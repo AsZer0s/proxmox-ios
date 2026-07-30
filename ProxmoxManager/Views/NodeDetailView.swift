@@ -53,13 +53,6 @@ struct NodeDetailView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                if let lastUpdated = model.lastUpdated {
-                    Text(lastUpdated, style: .time)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if model.isLoading {
                     ProgressView()

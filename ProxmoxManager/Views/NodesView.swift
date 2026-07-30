@@ -36,13 +36,6 @@ struct NodesView: View {
             }
             .navigationTitle("Nodes")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if let lastUpdated = model.lastUpdated {
-                        Text(lastUpdated, style: .time)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if model.isLoading && !model.nodes.isEmpty {
                         ProgressView()

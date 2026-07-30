@@ -75,17 +75,10 @@ struct VMListView: View {
             .navigationTitle("VMs & CTs")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 8) {
-                        if let lastUpdated = model.lastUpdated {
-                            Text(lastUpdated, style: .time)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Button {
-                            showingFilters = true
-                        } label: {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                        }
+                    Button {
+                        showingFilters = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
                     }
                 }
             }

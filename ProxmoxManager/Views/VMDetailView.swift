@@ -25,15 +25,6 @@ struct VMDetailView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(guest.displayName)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if let lastUpdated = model.lastUpdated {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Text(lastUpdated, style: .time)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
         .refreshable { await model.refresh(service: appState.service, guest: guest) }
         .task {
             await model.refresh(service: appState.service, guest: guest)
