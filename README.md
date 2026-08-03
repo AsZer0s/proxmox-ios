@@ -30,16 +30,17 @@ Whether you are checking cluster health, responding to an unavailable guest, or 
 | **Virtual machines and containers** | Browse QEMU virtual machines and LXC containers together, with search and filters for name, VMID, node, and status. |
 | **Lifecycle controls** | Start, reboot, gracefully shut down, or force-stop guests with confirmation for destructive actions. |
 | **Create and configure** | Create, edit, delete, and fully clone virtual machines and containers. Adjust CPU, memory, boot behavior, and other options. |
-| **Hardware management** | Inspect and manage disks and network interfaces, including disk expansion and network configuration. |
+| **Hardware management** | Add, expand, move, detach, and delete disks; manage CD/DVD, boot order, EFI, TPM, PCI, USB, serial, and advanced network configuration. |
 | **Cloud-Init** | Add a Cloud-Init drive, then configure users, SSH keys, DNS, package upgrades, and IPv4 / IPv6 networking. |
 | **Snapshots** | Create, roll back, and delete snapshots, with optional virtual machine state capture. |
-| **Storage and backups** | Review and remove storage content; create, restore, protect, unprotect, and delete backup archives. |
+| **Storage and backups** | Review storage content and manage backup schedules, retention/pruning, archives, restore, and protection. |
 | **Migration** | Move virtual machines and containers between compatible cluster nodes, including local-disk migration and storage mapping. |
 | **Firewall** | Manage guest firewall options, rules, security-group references, IPSets, IPSet entries, and firewall logs. |
-| **Console** | Open the built-in noVNC console or LXC terminal from password-authenticated connections. |
+| **Console** | Open the bundled noVNC console, LXC terminal, or node shell with password, TOTP, or API Token authentication. |
 | **Installation media** | Import an ISO from a URL or browse and download Proxmox LXC appliance templates. |
 | **Performance charts** | Explore CPU, memory, network, and disk history for nodes and guests across hourly, daily, and weekly ranges. |
-| **Task center** | Follow long-running Proxmox tasks, inspect results and logs, and cancel tasks that are still running. |
+| **Task center** | Browse persistent server task history across nodes, inspect results and logs, and cancel running tasks. |
+| **Node maintenance** | Control node services, refresh package indexes, review available updates, and safely reboot or shut down nodes. |
 
 ## Secure by design
 

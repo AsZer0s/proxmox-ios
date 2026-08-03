@@ -178,6 +178,12 @@ final class AppState: ObservableObject {
                 if let permissions = try? await service.fetchPermissions() {
                     self.permissions = permissions
                 }
+                let nodes = (try? await service.fetchNodes())?.map(\.node) ?? []
+                await self.taskCenter.activate(
+                    serverID: server.id,
+                    nodes: nodes,
+                    service: service
+                )
             } catch let error as ProxmoxError {
                 guard !Task.isCancelled else { return }
                 self.connectionState = .disconnected
@@ -215,6 +221,14 @@ final class AppState: ObservableObject {
             try await service.authenticateTOTP(code: code)
             self.connectionState = .connected
             self.permissions = try? await service.fetchPermissions()
+            let nodes = (try? await service.fetchNodes())?.map(\.node) ?? []
+            if let serverID = connectedServer?.id {
+                await taskCenter.activate(
+                    serverID: serverID,
+                    nodes: nodes,
+                    service: service
+                )
+            }
         } catch {
             self.lastError = error.localizedDescription
             self.connectionState = .disconnected
@@ -257,5 +271,6 @@ final class AppState: ObservableObject {
         connectedServer = nil
         connectionState = .disconnected
         permissions = nil
+        taskCenter.deactivate()
     }
 }

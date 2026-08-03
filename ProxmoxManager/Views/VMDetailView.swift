@@ -299,7 +299,7 @@ struct VMDetailView: View {
 
     private var canEditHardware: Bool {
         model.config != nil && appState.hasAnyPrivilege(
-            ["VM.Config.Disk", "VM.Config.Network"],
+            ["VM.Config.Disk", "VM.Config.Network", "VM.Config.CDROM", "VM.Config.HWType"],
             for: guest.vmid
         )
     }

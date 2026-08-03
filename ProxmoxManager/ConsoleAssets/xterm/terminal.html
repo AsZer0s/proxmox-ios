@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <link rel="stylesheet" href="./xterm.css">
+  <style>
+    html, body, #terminal { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #101114; }
+    .xterm { padding: 6px; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div id="terminal"></div>
+  <script type="module">
+    import { Terminal } from "./xterm.mjs";
+    import { FitAddon } from "./addon-fit.mjs";
+
+    const terminal = new Terminal({
+      cursorBlink: true,
+      convertEol: true,
+      fontFamily: "ui-monospace, Menlo, Monaco, monospace",
+      fontSize: 13,
+      theme: { background: "#101114", foreground: "#f2f2f2", cursor: "#58a6ff" }
+    });
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.open(document.getElementById("terminal"));
+    fitAddon.fit();
+
+    terminal.onData(data => window.webkit.messageHandlers.consoleSocket.postMessage({
+      action: "terminalInput",
+      data: data
+    }));
+
+    function resize() {
+      fitAddon.fit();
+      window.webkit.messageHandlers.consoleSocket.postMessage({
+        action: "resize",
+        columns: terminal.cols,
+        rows: terminal.rows
+      });
+    }
+    new ResizeObserver(resize).observe(document.getElementById("terminal"));
+
+    window.nativeSocketReceive = function(base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      terminal.write(bytes);
+    };
+    window.nativeSocketOpened = function() {
+      terminal.focus();
+      resize();
+    };
+    window.nativeSocketClosed = function() {
+      terminal.write("\r\n\x1b[90m[Session closed]\x1b[0m\r\n");
+    };
+    window.nativeSocketError = function(message) {
+      terminal.write("\r\n\x1b[31m" + message + "\x1b[0m\r\n");
+    };
+
+    window.webkit.messageHandlers.consoleSocket.postMessage({ action: "pageReady" });
+    setInterval(() => window.webkit.messageHandlers.consoleSocket.postMessage({ action: "ping" }), 30000);
+  </script>
+</body>
+</html>

@@ -834,6 +834,7 @@ final class ProxmoxManagerTests: XCTestCase {
 
     func testBackupEndpointsMatchPVEAPI() {
         XCTAssertEqual(ProxmoxEndpoint.backupJobs, "/cluster/backup")
+        XCTAssertEqual(ProxmoxEndpoint.backupJob(id: "job/one"), "/cluster/backup/job%2Fone")
         XCTAssertEqual(ProxmoxEndpoint.vzdump(node: "pve1"), "/nodes/pve1/vzdump")
         XCTAssertEqual(
             ProxmoxEndpoint.backupArchives(node: "pve1", storage: "backup/store"),
@@ -859,6 +860,81 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(job.vmid, "100")
         XCTAssertTrue(job.isEnabled)
         XCTAssertEqual(job.all, false)
+    }
+
+    func testBackupJobDecodesPruneObjectReturnedByPVE() throws {
+        let data = Data(#"""
+        {
+          "id": "backup-002",
+          "prune-backups": {
+            "keep-last": 3,
+            "keep-daily": 7,
+            "keep-all": false
+          },
+          "repeat-missed": true,
+          "protected": 1,
+          "next-run": "1712345678"
+        }
+        """#.utf8)
+
+        let job = try JSONDecoder().decode(ProxmoxBackupJob.self, from: data)
+        XCTAssertEqual(job.pruneBackups, "keep-all=0,keep-daily=7,keep-last=3")
+        XCTAssertEqual(job.repeatMissed, true)
+        XCTAssertEqual(job.protectedBackups, true)
+        XCTAssertEqual(job.nextRun, 1_712_345_678)
+    }
+
+    // MARK: - Task history and node maintenance
+
+    func testRunningNodeTaskDecodesAsRunning() throws {
+        let data = Data(#"""
+        {
+          "upid": "UPID:pve1:1:2:3:qmstart:100:root@pam:",
+          "id": "100",
+          "node": "pve1",
+          "pid": 1,
+          "starttime": 1712345678,
+          "status": "RUNNING",
+          "type": "qmstart",
+          "user": "root@pam"
+        }
+        """#.utf8)
+
+        let task = try JSONDecoder().decode(ProxmoxNodeTask.self, from: data)
+        XCTAssertTrue(task.isRunning)
+        XCTAssertFalse(task.succeeded)
+    }
+
+    func testCompletedNodeTaskDecodesFlexibleTimestamps() throws {
+        let data = Data(#"""
+        {
+          "upid": "UPID:pve1:1:2:3:vzdump:100:root@pam:",
+          "id": "100",
+          "node": "pve1",
+          "starttime": "1712345678",
+          "endtime": "1712345688",
+          "status": "OK",
+          "type": "vzdump",
+          "user": "root@pam"
+        }
+        """#.utf8)
+
+        let task = try JSONDecoder().decode(ProxmoxNodeTask.self, from: data)
+        XCTAssertFalse(task.isRunning)
+        XCTAssertTrue(task.succeeded)
+        XCTAssertEqual(task.endTime, 1_712_345_688)
+    }
+
+    func testNodeAndHardwareEndpointsMatchPVEAPI() {
+        XCTAssertEqual(ProxmoxEndpoint.nodeTasks(node: "pve1"), "/nodes/pve1/tasks")
+        XCTAssertEqual(ProxmoxEndpoint.nodeServices(node: "pve1"), "/nodes/pve1/services")
+        XCTAssertEqual(
+            ProxmoxEndpoint.nodeService(node: "pve1", service: "pveproxy", command: "restart"),
+            "/nodes/pve1/services/pveproxy/restart"
+        )
+        XCTAssertEqual(ProxmoxEndpoint.nodeAPTUpdate(node: "pve1"), "/nodes/pve1/apt/update")
+        XCTAssertEqual(ProxmoxEndpoint.guestUnlink(node: "pve1", vmid: 100), "/nodes/pve1/qemu/100/unlink")
+        XCTAssertEqual(ProxmoxEndpoint.guestMoveDisk(node: "pve1", vmid: 100), "/nodes/pve1/qemu/100/move_disk")
     }
 
     // MARK: - Node CPU

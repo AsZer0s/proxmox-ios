@@ -11,6 +11,9 @@ struct BackupsView: View {
     @State private var error: String?
     @State private var restoringFile: ProxmoxBackupFile?
     @State private var deletingFile: ProxmoxBackupFile?
+    @State private var editingJob: ProxmoxBackupJob?
+    @State private var deletingJob: ProxmoxBackupJob?
+    @State private var showingAddJob = false
 
     let node: String
 
@@ -46,6 +49,14 @@ struct BackupsView: View {
             }
             .environmentObject(appState)
         }
+        .sheet(isPresented: $showingAddJob) {
+            BackupJobEditorView(node: node, job: nil) { await load() }
+                .environmentObject(appState)
+        }
+        .sheet(item: $editingJob) { job in
+            BackupJobEditorView(node: node, job: job) { await load() }
+                .environmentObject(appState)
+        }
         .confirmationDialog(
             "Delete Backup Archive?",
             isPresented: Binding(
@@ -60,6 +71,21 @@ struct BackupsView: View {
             }
         } message: {
             Text("The backup archive will be permanently removed from storage.")
+        }
+        .confirmationDialog(
+            "Delete Backup Schedule?",
+            isPresented: Binding(
+                get: { deletingJob != nil },
+                set: { if !$0 { deletingJob = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let job = deletingJob else { return }
+                Task { await delete(job) }
+            }
+        } message: {
+            Text("The schedule definition will be removed. Existing backup archives are kept.")
         }
         .overlay {
             if isWorking {
@@ -78,10 +104,49 @@ struct BackupsView: View {
             } else {
                 ForEach(jobs) { job in
                     BackupJobRow(job: job)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if canManageSchedules { editingJob = job }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if canManageSchedules {
+                                Button(role: .destructive) {
+                                    deletingJob = job
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                Button {
+                                    Task { await toggle(job) }
+                                } label: {
+                                    Label(
+                                        job.isEnabled ? "Disable" : "Enable",
+                                        systemImage: job.isEnabled ? "pause.circle" : "play.circle"
+                                    )
+                                }
+                                .tint(.orange)
+                                Button {
+                                    editingJob = job
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.blue)
+                            }
+                        }
                 }
             }
         } header: {
-            Text("Schedules")
+            HStack {
+                Text("Schedules")
+                Spacer()
+                if canManageSchedules {
+                    Button {
+                        showingAddJob = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Add Backup Schedule")
+                }
+            }
         }
     }
 
@@ -169,6 +234,44 @@ struct BackupsView: View {
 
     private func canRestore(_ file: ProxmoxBackupFile) -> Bool {
         appState.hasPrivilege("VM.Allocate", for: file.vmid ?? 0)
+    }
+
+    private var canManageSchedules: Bool {
+        appState.hasPrivilege("Sys.Modify", on: "/")
+    }
+
+    @MainActor
+    private func toggle(_ job: ProxmoxBackupJob) async {
+        guard let service = appState.service else { return }
+        isWorking = true
+        error = nil
+        defer { isWorking = false }
+        do {
+            try await service.updateBackupJob(
+                id: job.id,
+                form: ["enabled": job.isEnabled ? "0" : "1"]
+            )
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func delete(_ job: ProxmoxBackupJob) async {
+        guard let service = appState.service else { return }
+        isWorking = true
+        error = nil
+        defer {
+            isWorking = false
+            deletingJob = nil
+        }
+        do {
+            try await service.deleteBackupJob(id: job.id)
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func canManage(_ file: ProxmoxBackupFile) -> Bool {
@@ -322,5 +425,302 @@ private struct BackupFileRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct BackupJobEditorView: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    let node: String
+    let job: ProxmoxBackupJob?
+    let onSaved: () async -> Void
+
+    @State private var storages: [ProxmoxStorage] = []
+    @State private var guests: [ProxmoxVM] = []
+    @State private var selectedStorage: String
+    @State private var schedule: String
+    @State private var mode: String
+    @State private var compression: String
+    @State private var comment: String
+    @State private var notesTemplate: String
+    @State private var allNodes: Bool
+    @State private var allGuests: Bool
+    @State private var selectedVMIDs: Set<Int>
+    @State private var enabled: Bool
+    @State private var protectedBackups: Bool
+    @State private var repeatMissed: Bool
+    @State private var pruneAfterBackup: Bool
+    @State private var overrideRetention: Bool
+    @State private var keepLast: String
+    @State private var keepDaily: String
+    @State private var keepWeekly: String
+    @State private var keepMonthly: String
+    @State private var keepYearly: String
+    @State private var isLoading = true
+    @State private var isSaving = false
+    @State private var error: String?
+
+    init(node: String, job: ProxmoxBackupJob?, onSaved: @escaping () async -> Void) {
+        self.node = node
+        self.job = job
+        self.onSaved = onSaved
+        _selectedStorage = State(initialValue: job?.storage ?? "")
+        _schedule = State(initialValue: job?.schedule ?? "daily")
+        _mode = State(initialValue: job?.mode ?? "snapshot")
+        _compression = State(initialValue: job?.compress ?? "zstd")
+        _comment = State(initialValue: job?.comment ?? "")
+        _notesTemplate = State(initialValue: job?.notesTemplate ?? "{{guestname}}")
+        _allNodes = State(initialValue: job?.node == nil)
+        _allGuests = State(initialValue: job?.all ?? true)
+        let ids = job?.vmid?
+            .split(whereSeparator: { $0 == "," || $0 == ";" || $0 == " " })
+            .compactMap { Int($0) } ?? []
+        _selectedVMIDs = State(initialValue: Set(ids))
+        _enabled = State(initialValue: job?.isEnabled ?? true)
+        _protectedBackups = State(initialValue: job?.protectedBackups ?? false)
+        _repeatMissed = State(initialValue: job?.repeatMissed ?? true)
+        _pruneAfterBackup = State(initialValue: job?.remove ?? true)
+
+        let retention = Self.parseRetention(job?.pruneBackups)
+        _overrideRetention = State(initialValue: job == nil || job?.pruneBackups != nil)
+        _keepLast = State(initialValue: retention["keep-last"] ?? (job == nil ? "3" : ""))
+        _keepDaily = State(initialValue: retention["keep-daily"] ?? (job == nil ? "7" : ""))
+        _keepWeekly = State(initialValue: retention["keep-weekly"] ?? (job == nil ? "4" : ""))
+        _keepMonthly = State(initialValue: retention["keep-monthly"] ?? (job == nil ? "6" : ""))
+        _keepYearly = State(initialValue: retention["keep-yearly"] ?? (job == nil ? "1" : ""))
+    }
+
+    private var compatibleStorages: [ProxmoxStorage] {
+        storages.filter {
+            $0.isAvailable &&
+            $0.storageTypes.contains("backup") &&
+            appState.hasPrivilege("Datastore.Allocate", on: "/storage/\($0.storage)")
+        }
+    }
+
+    private var canSave: Bool {
+        !selectedStorage.isEmpty &&
+        !schedule.trimmed.isEmpty &&
+        (allGuests || !selectedVMIDs.isEmpty) &&
+        (!overrideRetention || retentionValuesAreValid) &&
+        !isSaving
+    }
+
+    private var retentionValuesAreValid: Bool {
+        [keepLast, keepDaily, keepWeekly, keepMonthly, keepYearly].allSatisfy {
+            $0.trimmed.isEmpty || (Int($0).map { $0 >= 0 } == true)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Storage", selection: $selectedStorage) {
+                        ForEach(compatibleStorages) { storage in
+                            Text(storage.storage).tag(storage.storage)
+                        }
+                    }
+                    TextField("Schedule", text: $schedule)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Picker("Backup Mode", selection: $mode) {
+                        Text("Snapshot").tag("snapshot")
+                        Text("Suspend").tag("suspend")
+                        Text("Stop").tag("stop")
+                    }
+                    Picker("Compression", selection: $compression) {
+                        Text("Zstandard").tag("zstd")
+                        Text("LZO").tag("lzo")
+                        Text("Gzip").tag("gzip")
+                        Text("None").tag("0")
+                    }
+                    Toggle("Enabled", isOn: $enabled)
+                    Toggle("Repeat Missed Jobs", isOn: $repeatMissed)
+                } header: {
+                    Text("Schedule")
+                } footer: {
+                    Text("Examples: daily, hourly, mon..fri 22:00, or sun 03:30.")
+                }
+
+                Section {
+                    Toggle("Run on All Nodes", isOn: $allNodes)
+                    Toggle("Back Up All Guests", isOn: $allGuests)
+                    if !allGuests {
+                        ForEach(guests) { guest in
+                            Toggle(isOn: Binding(
+                                get: { selectedVMIDs.contains(guest.vmid) },
+                                set: { selected in
+                                    if selected {
+                                        selectedVMIDs.insert(guest.vmid)
+                                    } else {
+                                        selectedVMIDs.remove(guest.vmid)
+                                    }
+                                }
+                            )) {
+                                Text("\(guest.displayName) · \(guest.vmid)")
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Guests")
+                }
+
+                Section {
+                    Toggle("Prune After Backup", isOn: $pruneAfterBackup)
+                    Toggle("Override Storage Retention", isOn: $overrideRetention)
+                    if overrideRetention {
+                        retentionField("Keep Last", text: $keepLast)
+                        retentionField("Keep Daily", text: $keepDaily)
+                        retentionField("Keep Weekly", text: $keepWeekly)
+                        retentionField("Keep Monthly", text: $keepMonthly)
+                        retentionField("Keep Yearly", text: $keepYearly)
+                    }
+                    Toggle("Protect New Backups", isOn: $protectedBackups)
+                } header: {
+                    Text("Retention")
+                } footer: {
+                    Text("Leave a retention field empty to inherit no value for that period.")
+                }
+
+                Section {
+                    TextField("Comment (optional)", text: $comment)
+                    TextField("Notes Template", text: $notesTemplate)
+                } header: {
+                    Text("Metadata")
+                }
+
+                if compatibleStorages.isEmpty, !isLoading {
+                    Section {
+                        Text("No accessible backup storage is available.")
+                            .foregroundStyle(.red)
+                    }
+                }
+                if overrideRetention, !retentionValuesAreValid {
+                    Section {
+                        Text("Retention values must be zero or greater.")
+                            .foregroundStyle(.red)
+                    }
+                }
+                if let error {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle(job == nil ? "Add Backup Schedule" : "Edit Backup Schedule")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { await save() } }
+                        .disabled(!canSave)
+                }
+            }
+            .overlay { if isLoading || isSaving { ProgressView() } }
+            .task { await load() }
+        }
+    }
+
+    private func retentionField(_ label: LocalizedStringKey, text: Binding<String>) -> some View {
+        TextField(label, text: text)
+            .keyboardType(.numberPad)
+    }
+
+    @MainActor
+    private func load() async {
+        guard let service = appState.service else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            async let storagesRequest = service.fetchStorages(node: node)
+            async let guestsRequest = service.fetchGuests(node: node)
+            let (loadedStorages, loadedGuests) = try await (storagesRequest, guestsRequest)
+            storages = loadedStorages
+            guests = loadedGuests
+            if !compatibleStorages.contains(where: { $0.storage == selectedStorage }) {
+                selectedStorage = compatibleStorages.first?.storage ?? ""
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func save() async {
+        guard let service = appState.service, canSave else { return }
+        isSaving = true
+        error = nil
+        defer { isSaving = false }
+
+        var form: [String: String] = [
+            "storage": selectedStorage,
+            "schedule": schedule.trimmed,
+            "mode": mode,
+            "compress": compression,
+            "enabled": enabled ? "1" : "0",
+            "all": allGuests ? "1" : "0",
+            "protected": protectedBackups ? "1" : "0",
+            "repeat-missed": repeatMissed ? "1" : "0",
+            "remove": pruneAfterBackup ? "1" : "0",
+            "notes-template": notesTemplate.trimmed,
+            "comment": comment.trimmed,
+        ]
+        if overrideRetention { form["prune-backups"] = retentionForm }
+        if !allNodes { form["node"] = node }
+        if !allGuests {
+            form["vmid"] = selectedVMIDs.sorted().map(String.init).joined(separator: ",")
+        }
+
+        if job != nil {
+            var deleted: [String] = []
+            if allNodes { deleted.append("node") }
+            if allGuests { deleted.append("vmid") }
+            if comment.trimmed.isEmpty { deleted.append("comment") }
+            if notesTemplate.trimmed.isEmpty { deleted.append("notes-template") }
+            if !overrideRetention, job?.pruneBackups != nil { deleted.append("prune-backups") }
+            if !deleted.isEmpty { form["delete"] = deleted.joined(separator: ",") }
+        }
+        if comment.trimmed.isEmpty { form.removeValue(forKey: "comment") }
+        if notesTemplate.trimmed.isEmpty { form.removeValue(forKey: "notes-template") }
+
+        do {
+            if let job {
+                try await service.updateBackupJob(id: job.id, form: form)
+            } else {
+                try await service.createBackupJob(form: form)
+            }
+            await onSaved()
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private var retentionForm: String {
+        let value = [
+            ("keep-last", keepLast),
+            ("keep-daily", keepDaily),
+            ("keep-weekly", keepWeekly),
+            ("keep-monthly", keepMonthly),
+            ("keep-yearly", keepYearly),
+        ]
+        .compactMap { key, value in
+            value.trimmed.isEmpty ? nil : "\(key)=\(value.trimmed)"
+        }
+        .joined(separator: ",")
+        return value.isEmpty ? "keep-all=1" : value
+    }
+
+    private static func parseRetention(_ value: String?) -> [String: String] {
+        guard let value else { return [:] }
+        return Dictionary(uniqueKeysWithValues: value.split(separator: ",").compactMap {
+            let pair = $0.split(separator: "=", maxSplits: 1).map(String.init)
+            return pair.count == 2 ? (pair[0], pair[1]) : nil
+        })
     }
 }

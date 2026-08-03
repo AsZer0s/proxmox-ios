@@ -34,6 +34,18 @@ enum ProxmoxEndpoint {
         "\(guest(node: node, type: type, vmid: vmid))/firewall"
     }
 
+    static func guestUnlink(node: String, vmid: Int) -> String {
+        "\(guest(node: node, type: .qemu, vmid: vmid))/unlink"
+    }
+
+    static func guestMoveDisk(node: String, vmid: Int) -> String {
+        "\(guest(node: node, type: .qemu, vmid: vmid))/move_disk"
+    }
+
+    static func backupJob(id: String) -> String {
+        "\(backupJobs)/\(id.pathEscaped)"
+    }
+
     static func storageContent(node: String, storage: String, content: String? = nil) -> String {
         var path = "/nodes/\(node)/storage/\(storage.pathEscaped)/content"
         if let content, !content.isEmpty {
@@ -61,6 +73,22 @@ enum ProxmoxEndpoint {
     static func vzdump(node: String) -> String {
         "/nodes/\(node)/vzdump"
     }
+
+    static func nodeTasks(node: String) -> String {
+        "/nodes/\(node)/tasks"
+    }
+
+    static func nodeServices(node: String) -> String {
+        "/nodes/\(node)/services"
+    }
+
+    static func nodeService(node: String, service: String, command: String) -> String {
+        "\(nodeServices(node: node))/\(service.pathEscaped)/\(command)"
+    }
+
+    static func nodeAPTUpdate(node: String) -> String {
+        "/nodes/\(node)/apt/update"
+    }
 }
 
 // MARK: - Errors
@@ -77,7 +105,6 @@ enum ProxmoxError: LocalizedError {
     case taskTimeout
     case network(String)
     case tfaRequired
-    case webConsoleRequiresTicket
 
     var errorDescription: String? {
         switch self {
@@ -103,10 +130,6 @@ enum ProxmoxError: LocalizedError {
             return "Network error: \(msg)"
         case .tfaRequired:
             return "Two-factor authentication is required. Enter your TOTP code."
-        case .webConsoleRequiresTicket:
-            return String(
-                localized: "The integrated console requires a username and password connection."
-            )
         }
     }
 }
@@ -238,13 +261,6 @@ actor ProxmoxAPIService {
         } catch {
             throw ProxmoxError.decodingFailed(error.localizedDescription)
         }
-    }
-
-    func webConsoleTicket() throws -> String {
-        guard server.authMethod == .ticket, let ticket, !ticket.isEmpty else {
-            throw ProxmoxError.webConsoleRequiresTicket
-        }
-        return ticket
     }
 
     static func totpFormBody(
@@ -507,6 +523,25 @@ actor ProxmoxAPIService {
             .sorted { $0.n < $1.n }
     }
 
+    func fetchNodeTasks(
+        node: String,
+        source: String = "all",
+        limit: Int = 100,
+        start: Int = 0,
+        errorsOnly: Bool = false
+    ) async throws -> [ProxmoxNodeTask] {
+        let query = [
+            "source=\(source.formURLEncoded)",
+            "limit=\(max(0, limit))",
+            "start=\(max(0, start))",
+            "errors=\(errorsOnly ? 1 : 0)",
+        ].joined(separator: "&")
+        return try await get(
+            "\(ProxmoxEndpoint.nodeTasks(node: node))?\(query)",
+            as: [ProxmoxNodeTask].self
+        )
+    }
+
     /// Cancels a running task (cluster tasks only, not guest-level tasks).
     @discardableResult
     func cancelTask(node: String, upid: String) async throws -> String {
@@ -671,6 +706,18 @@ actor ProxmoxAPIService {
             .filter { $0.node == nil || $0.node == node }
     }
 
+    func createBackupJob(form: [String: String]) async throws {
+        _ = try await post(ProxmoxEndpoint.backupJobs, form: form)
+    }
+
+    func updateBackupJob(id: String, form: [String: String]) async throws {
+        _ = try await put(ProxmoxEndpoint.backupJob(id: id), form: form)
+    }
+
+    func deleteBackupJob(id: String) async throws {
+        _ = try await delete(ProxmoxEndpoint.backupJob(id: id))
+    }
+
     func fetchBackupFiles(node: String) async throws -> [ProxmoxBackupFile] {
         let storages = try await fetchStorages(node: node)
             .filter { $0.isAvailable && $0.storageTypes.contains("backup") }
@@ -743,6 +790,135 @@ actor ProxmoxAPIService {
         }
         form[type == .qemu ? "archive" : "ostemplate"] = archive
         return try await post(ProxmoxEndpoint.guests(node: node, type: type), form: form)
+    }
+
+    // MARK: Guest Hardware
+
+    @discardableResult
+    func unlinkGuestDisk(
+        node: String,
+        vmid: Int,
+        disk: String,
+        permanentlyDelete: Bool
+    ) async throws -> String {
+        try await put(
+            ProxmoxEndpoint.guestUnlink(node: node, vmid: vmid),
+            form: [
+                "idlist": disk,
+                "force": permanentlyDelete ? "1" : "0",
+            ]
+        )
+    }
+
+    @discardableResult
+    func moveGuestDisk(
+        node: String,
+        vmid: Int,
+        disk: String,
+        storage: String,
+        deleteSource: Bool = true
+    ) async throws -> String {
+        try await post(
+            ProxmoxEndpoint.guestMoveDisk(node: node, vmid: vmid),
+            form: [
+                "disk": disk,
+                "storage": storage,
+                "delete": deleteSource ? "1" : "0",
+            ]
+        )
+    }
+
+    func fetchNodePCIDevices(node: String) async throws -> [ProxmoxPCIDevice] {
+        try await get(
+            "/nodes/\(node)/hardware/pci?verbose=1",
+            as: [ProxmoxPCIDevice].self
+        )
+    }
+
+    func fetchNodeUSBDevices(node: String) async throws -> [ProxmoxUSBDevice] {
+        try await get("/nodes/\(node)/hardware/usb", as: [ProxmoxUSBDevice].self)
+    }
+
+    // MARK: Node Maintenance
+
+    @discardableResult
+    func performNodePowerAction(node: String, command: String) async throws -> String {
+        try await post("/nodes/\(node)/status", form: ["command": command])
+    }
+
+    func fetchNodeServices(node: String) async throws -> [ProxmoxNodeService] {
+        try await get(ProxmoxEndpoint.nodeServices(node: node), as: [ProxmoxNodeService].self)
+            .sorted { $0.service.localizedCaseInsensitiveCompare($1.service) == .orderedAscending }
+    }
+
+    @discardableResult
+    func performNodeServiceAction(
+        node: String,
+        service: String,
+        command: String
+    ) async throws -> String {
+        try await post(
+            ProxmoxEndpoint.nodeService(node: node, service: service, command: command)
+        )
+    }
+
+    func fetchNodeUpdates(node: String) async throws -> [ProxmoxPackageUpdate] {
+        try await get(ProxmoxEndpoint.nodeAPTUpdate(node: node), as: [ProxmoxPackageUpdate].self)
+            .sorted { $0.package.localizedCaseInsensitiveCompare($1.package) == .orderedAscending }
+    }
+
+    @discardableResult
+    func refreshNodePackageIndex(node: String) async throws -> String {
+        try await post(ProxmoxEndpoint.nodeAPTUpdate(node: node), form: ["notify": "0"])
+    }
+
+    // MARK: Native Consoles
+
+    func createGuestConsoleProxy(
+        node: String,
+        type: GuestType,
+        vmid: Int,
+        terminal: Bool
+    ) async throws -> ProxmoxConsoleProxy {
+        let endpoint = "\(ProxmoxEndpoint.guest(node: node, type: type, vmid: vmid))/\(terminal ? "termproxy" : "vncproxy")"
+        return try await postDecoded(
+            endpoint,
+            form: terminal ? [:] : ["websocket": "1"],
+            as: ProxmoxConsoleProxy.self
+        )
+    }
+
+    func createNodeConsoleProxy(
+        node: String,
+        command: String = "login"
+    ) async throws -> ProxmoxConsoleProxy {
+        try await postDecoded(
+            "/nodes/\(node)/termproxy",
+            form: ["cmd": command],
+            as: ProxmoxConsoleProxy.self
+        )
+    }
+
+    func makeConsoleWebSocketTask(
+        node: String,
+        type: GuestType?,
+        vmid: Int?,
+        proxy: ProxmoxConsoleProxy
+    ) throws -> URLSessionWebSocketTask {
+        var path = "/nodes/\(node)"
+        if let type, let vmid {
+            path += "/\(type.apiPath)/\(vmid)"
+        }
+        path += "/vncwebsocket?port=\(proxy.port)&vncticket=\(proxy.ticket.formURLEncoded)"
+        guard var components = URLComponents(string: server.baseURL + path) else {
+            throw ProxmoxError.invalidURL
+        }
+        components.scheme = "wss"
+        guard let url = components.url else { throw ProxmoxError.invalidURL }
+        var request = URLRequest(url: url)
+        applyAuth(to: &request)
+        request.setValue("binary", forHTTPHeaderField: "Sec-WebSocket-Protocol")
+        return session.webSocketTask(with: request)
     }
 
     // MARK: Guest Firewall
@@ -1035,6 +1211,32 @@ actor ProxmoxAPIService {
 
         let (data, _) = try await performAuthenticatedRequest(request)
         return Self.mutationResult(from: data)
+    }
+
+    private func postDecoded<T: Decodable>(
+        _ path: String,
+        form: [String: String] = [:],
+        as type: T.Type
+    ) async throws -> T {
+        guard server.authMethod == .token || ticket != nil else {
+            throw ProxmoxError.notAuthenticated
+        }
+        guard let url = URL(string: server.baseURL + path) else {
+            throw ProxmoxError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        applyAuth(to: &request)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Self.formBody(form)
+
+        let (data, _) = try await performAuthenticatedRequest(request)
+        do {
+            return try JSONDecoder().decode(ProxmoxResponse<T>.self, from: data).data
+        } catch {
+            throw ProxmoxError.decodingFailed(error.localizedDescription)
+        }
     }
 
     @discardableResult

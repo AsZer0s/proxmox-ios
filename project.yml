@@ -21,6 +21,11 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: ProxmoxManager
+        excludes:
+          - ConsoleAssets
+      - path: ProxmoxManager/ConsoleAssets
+        type: folder
+        buildPhase: resources
     info:
       path: ProxmoxManager/Info.plist
       properties:

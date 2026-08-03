@@ -10,10 +10,18 @@ struct GuestHardwareEditorView: View {
 
     @State private var config: GuestConfig
     @State private var resizingDisk: GuestHardwareDisk?
+    @State private var movingDisk: GuestHardwareDisk?
+    @State private var diskToDetach: GuestHardwareDisk?
+    @State private var diskToDelete: GuestHardwareDisk?
     @State private var showingAddDisk = false
     @State private var editingNetwork: GuestHardwareNetwork?
     @State private var showingAddNetwork = false
     @State private var showingAddCloudInitDrive = false
+    @State private var editingCDROM: GuestHardwareDevice?
+    @State private var showingAddCDROM = false
+    @State private var showingBootOrder = false
+    @State private var addingAdvancedDevice: GuestAdvancedDeviceKind?
+    @State private var deletingAdvancedDevice: GuestHardwareDevice?
     @State private var deletingNetwork: GuestHardwareNetwork?
     @State private var isWorking = false
     @State private var error: String?
@@ -38,6 +46,43 @@ struct GuestHardwareEditorView: View {
             ["VM.Config.Cloudinit", "VM.Config.CDROM"],
             for: guest.vmid
         )
+    }
+
+    private var canEditCDROM: Bool {
+        appState.hasPrivilege("VM.Config.CDROM", for: guest.vmid)
+    }
+
+    private var canEditAdvancedDevices: Bool {
+        appState.hasPrivilege("VM.Config.HWType", for: guest.vmid)
+    }
+
+    private var canEditBootOrder: Bool {
+        appState.hasPrivilege("VM.Config.Options", for: guest.vmid)
+    }
+
+    private var cdroms: [GuestHardwareDevice] {
+        config.rawValues.compactMap { key, value in
+            guard key.range(
+                of: #"^(ide|sata|scsi)\d+$"#,
+                options: .regularExpression
+            ) != nil, value.contains("media=cdrom") else { return nil }
+            return GuestHardwareDevice(key: key, value: value, kind: .cdrom)
+        }
+        .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+
+    private var advancedDevices: [GuestHardwareDevice] {
+        config.rawValues.compactMap { key, value in
+            let kind: GuestAdvancedDeviceKind?
+            if key == "efidisk0" { kind = .efi }
+            else if key == "tpmstate0" { kind = .tpm }
+            else if key.hasPrefix("hostpci") { kind = .pci }
+            else if key.hasPrefix("usb") { kind = .usb }
+            else if key.hasPrefix("serial") { kind = .serial }
+            else { kind = nil }
+            return kind.map { GuestHardwareDevice(key: key, value: value, kind: $0) }
+        }
+        .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
     }
 
     private var cloudInitDrive: GuestHardwareDisk? {
@@ -68,10 +113,18 @@ struct GuestHardwareEditorView: View {
                             }
                             Spacer()
                             if canEditDisks {
-                                Button("Expand") {
-                                    resizingDisk = disk
+                                Menu {
+                                    Button("Expand") { resizingDisk = disk }
+                                    if guest.type == .qemu {
+                                        Button("Move to Storage") { movingDisk = disk }
+                                        Button("Detach") { diskToDetach = disk }
+                                        Button("Delete Permanently", role: .destructive) {
+                                            diskToDelete = disk
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
                                 }
-                                .buttonStyle(.bordered)
                             }
                         }
                         .padding(.vertical, 3)
@@ -91,8 +144,6 @@ struct GuestHardwareEditorView: View {
                     }
                 } header: {
                     Text("Disks")
-                } footer: {
-                    Text("Disk shrinking and disk deletion are intentionally unavailable.")
                 }
 
                 Section {
@@ -138,6 +189,23 @@ struct GuestHardwareEditorView: View {
 
                 if guest.type == .qemu {
                     Section {
+                        ForEach(cdroms) { device in
+                            hardwareDeviceRow(device) {
+                                editingCDROM = device
+                            }
+                        }
+                        if canEditCDROM {
+                            Button {
+                                showingAddCDROM = true
+                            } label: {
+                                Label("Add CD/DVD Drive", systemImage: "plus.circle")
+                            }
+                        }
+                    } header: {
+                        Text("CD/DVD Drives")
+                    }
+
+                    Section {
                         if let cloudInitDrive {
                             HStack(spacing: 12) {
                                 Image(systemName: "cloud")
@@ -162,6 +230,40 @@ struct GuestHardwareEditorView: View {
                         }
                     } header: {
                         Text("Cloud-Init Drive")
+                    }
+
+                    Section {
+                        if canEditBootOrder {
+                            Button {
+                                showingBootOrder = true
+                            } label: {
+                                Label("Edit Boot Order", systemImage: "list.number")
+                            }
+                        }
+                        ForEach(advancedDevices) { device in
+                            hardwareDeviceRow(device) {
+                                deletingAdvancedDevice = device
+                            }
+                        }
+                        if canEditDisks || canEditAdvancedDevices {
+                            Menu {
+                                if canEditDisks, !advancedDevices.contains(where: { $0.kind == .efi }) {
+                                    Button("EFI Disk") { addingAdvancedDevice = .efi }
+                                }
+                                if canEditDisks, !advancedDevices.contains(where: { $0.kind == .tpm }) {
+                                    Button("TPM State") { addingAdvancedDevice = .tpm }
+                                }
+                                if canEditAdvancedDevices {
+                                    Button("PCI Device") { addingAdvancedDevice = .pci }
+                                    Button("USB Device") { addingAdvancedDevice = .usb }
+                                    Button("Serial Port") { addingAdvancedDevice = .serial }
+                                }
+                            } label: {
+                                Label("Add Advanced Device", systemImage: "plus.circle")
+                            }
+                        }
+                    } header: {
+                        Text("Boot & Advanced Devices")
                     }
                 }
 
@@ -191,6 +293,10 @@ struct GuestHardwareEditorView: View {
                 }
                 .environmentObject(appState)
             }
+            .sheet(item: $movingDisk) { disk in
+                MoveGuestDiskView(guest: guest, disk: disk) { await reload() }
+                    .environmentObject(appState)
+            }
             .sheet(isPresented: $showingAddDisk) {
                 AddGuestDiskView(guest: guest, config: config) {
                     await reload()
@@ -215,6 +321,28 @@ struct GuestHardwareEditorView: View {
                 }
                 .environmentObject(appState)
             }
+            .sheet(item: $editingCDROM) { device in
+                GuestCDROMEditorView(guest: guest, config: config, device: device) {
+                    await reload()
+                }
+                .environmentObject(appState)
+            }
+            .sheet(isPresented: $showingAddCDROM) {
+                GuestCDROMEditorView(guest: guest, config: config, device: nil) {
+                    await reload()
+                }
+                .environmentObject(appState)
+            }
+            .sheet(isPresented: $showingBootOrder) {
+                GuestBootOrderEditorView(guest: guest, config: config) { await reload() }
+                    .environmentObject(appState)
+            }
+            .sheet(item: $addingAdvancedDevice) { kind in
+                AddGuestAdvancedDeviceView(guest: guest, config: config, kind: kind) {
+                    await reload()
+                }
+                .environmentObject(appState)
+            }
             .confirmationDialog(
                 "Delete Network Interface?",
                 isPresented: Binding(
@@ -230,6 +358,81 @@ struct GuestHardwareEditorView: View {
             } message: {
                 Text("The interface is removed from the guest configuration.")
             }
+            .confirmationDialog(
+                "Detach Disk?",
+                isPresented: Binding(
+                    get: { diskToDetach != nil },
+                    set: { if !$0 { diskToDetach = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Detach") {
+                    guard let disk = diskToDetach else { return }
+                    Task { await unlink(disk, permanentlyDelete: false) }
+                }
+            } message: {
+                Text("The disk is detached and kept as an unused volume.")
+            }
+            .confirmationDialog(
+                "Delete Disk Permanently?",
+                isPresented: Binding(
+                    get: { diskToDelete != nil },
+                    set: { if !$0 { diskToDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete Permanently", role: .destructive) {
+                    guard let disk = diskToDelete else { return }
+                    Task { await unlink(disk, permanentlyDelete: true) }
+                }
+            } message: {
+                Text("The disk volume and all data on it will be permanently deleted.")
+            }
+            .confirmationDialog(
+                "Remove Hardware Device?",
+                isPresented: Binding(
+                    get: { deletingAdvancedDevice != nil },
+                    set: { if !$0 { deletingAdvancedDevice = nil } }
+                )
+            ) {
+                Button("Remove", role: .destructive) {
+                    guard let device = deletingAdvancedDevice else { return }
+                    Task { await removeAdvancedDevice(device) }
+                }
+            }
+        }
+    }
+
+    private func hardwareDeviceRow(
+        _ device: GuestHardwareDevice,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: device.kind.systemImage)
+                .foregroundStyle(.purple)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(device.key.uppercased())
+                    .font(.body.weight(.medium))
+                Text(device.value)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            if canEdit(device) {
+                Button(action: action) {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func canEdit(_ device: GuestHardwareDevice) -> Bool {
+        switch device.kind {
+        case .cdrom: return canEditCDROM
+        case .efi, .tpm: return canEditDisks
+        case .pci, .usb, .serial: return canEditAdvancedDevices
         }
     }
 
@@ -263,6 +466,63 @@ struct GuestHardwareEditorView: View {
                 type: guest.type,
                 vmid: guest.vmid,
                 form: ["delete": network.key]
+            )
+            await reload()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func unlink(_ disk: GuestHardwareDisk, permanentlyDelete: Bool) async {
+        guard let service = appState.service else { return }
+        isWorking = true
+        error = nil
+        defer {
+            isWorking = false
+            diskToDetach = nil
+            diskToDelete = nil
+        }
+        do {
+            let upid = try await service.unlinkGuestDisk(
+                node: guest.node,
+                vmid: guest.vmid,
+                disk: disk.key,
+                permanentlyDelete: permanentlyDelete
+            )
+            if !upid.isEmpty {
+                appState.taskCenter.track(
+                    upid: upid,
+                    node: guest.node,
+                    title: permanentlyDelete
+                        ? String(localized: "Delete disk")
+                        : String(localized: "Detach disk"),
+                    object: "\(guest.displayName) · \(disk.key)",
+                    service: service
+                )
+                _ = try await service.waitForTask(node: guest.node, upid: upid)
+            }
+            await reload()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func removeAdvancedDevice(_ device: GuestHardwareDevice) async {
+        guard let service = appState.service else { return }
+        isWorking = true
+        error = nil
+        defer {
+            isWorking = false
+            deletingAdvancedDevice = nil
+        }
+        do {
+            _ = try await service.updateGuest(
+                node: guest.node,
+                type: guest.type,
+                vmid: guest.vmid,
+                form: ["delete": device.key]
             )
             await reload()
         } catch {

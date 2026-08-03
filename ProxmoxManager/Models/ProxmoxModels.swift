@@ -286,6 +286,45 @@ struct ProxmoxTaskStatus: Codable, Hashable {
     }
 }
 
+struct ProxmoxNodeTask: Decodable, Identifiable, Hashable {
+    let upid: String
+    let idValue: String
+    let node: String
+    let pid: Int?
+    let startTime: Int64
+    let endTime: Int64?
+    let status: String?
+    let taskType: String
+    let user: String
+
+    var id: String { upid }
+    var isRunning: Bool {
+        endTime == nil && (status == nil || status?.isEmpty == true || status?.uppercased() == "RUNNING")
+    }
+    var succeeded: Bool { status?.uppercased() == "OK" }
+
+    private enum CodingKeys: String, CodingKey {
+        case upid, node, pid, status, user
+        case idValue = "id"
+        case startTime = "starttime"
+        case endTime = "endtime"
+        case taskType = "type"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        upid = try container.decode(String.self, forKey: .upid)
+        idValue = try container.decodeIfPresent(String.self, forKey: .idValue) ?? ""
+        node = try container.decode(String.self, forKey: .node)
+        pid = container.decodeFlexibleInt(forKey: .pid)
+        startTime = container.decodeFlexibleInt64(forKey: .startTime) ?? 0
+        endTime = container.decodeFlexibleInt64(forKey: .endTime)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        taskType = try container.decode(String.self, forKey: .taskType)
+        user = try container.decode(String.self, forKey: .user)
+    }
+}
+
 // MARK: - Virtual Machines / Containers
 
 /// A guest (QEMU VM or LXC container). Used for `/nodes/{node}/qemu` and
@@ -1367,11 +1406,23 @@ struct ProxmoxBackupJob: Codable, Identifiable, Hashable {
     let mode: String?
     let enabled: Bool?
     let all: Bool?
+    let compress: String?
+    let pruneBackups: String?
+    let remove: Bool?
+    let protectedBackups: Bool?
+    let repeatMissed: Bool?
+    let nextRun: Int64?
+    let notesTemplate: String?
 
     var isEnabled: Bool { enabled != false }
 
     enum CodingKeys: String, CodingKey {
-        case id, node, storage, schedule, vmid, comment, mode, enabled, all
+        case id, node, storage, schedule, vmid, comment, mode, enabled, all, compress, remove
+        case pruneBackups = "prune-backups"
+        case protectedBackups = "protected"
+        case repeatMissed = "repeat-missed"
+        case nextRun = "next-run"
+        case notesTemplate = "notes-template"
     }
 
     init(from decoder: Decoder) throws {
@@ -1391,6 +1442,35 @@ struct ProxmoxBackupJob: Codable, Identifiable, Hashable {
         mode = try container.decodeIfPresent(String.self, forKey: .mode)
         enabled = Self.decodeBool(container, key: .enabled)
         all = Self.decodeBool(container, key: .all)
+        compress = try container.decodeIfPresent(String.self, forKey: .compress)
+        if let value = try? container.decode(String.self, forKey: .pruneBackups) {
+            pruneBackups = value
+        } else if let object = try? container.nestedContainer(
+            keyedBy: DynamicCodingKey.self,
+            forKey: .pruneBackups
+        ) {
+            pruneBackups = object.allKeys.sorted { $0.stringValue < $1.stringValue }
+                .compactMap { key in
+                    if let value = try? object.decode(Int.self, forKey: key) {
+                        return "\(key.stringValue)=\(value)"
+                    }
+                    if let value = try? object.decode(Bool.self, forKey: key) {
+                        return "\(key.stringValue)=\(value ? 1 : 0)"
+                    }
+                    if let value = try? object.decode(String.self, forKey: key) {
+                        return "\(key.stringValue)=\(value)"
+                    }
+                    return nil
+                }
+                .joined(separator: ",")
+        } else {
+            pruneBackups = nil
+        }
+        remove = Self.decodeBool(container, key: .remove)
+        protectedBackups = Self.decodeBool(container, key: .protectedBackups)
+        repeatMissed = Self.decodeBool(container, key: .repeatMissed)
+        nextRun = container.decodeFlexibleInt64(forKey: .nextRun)
+        notesTemplate = try container.decodeIfPresent(String.self, forKey: .notesTemplate)
     }
 
     private static func decodeBool(
@@ -1407,6 +1487,131 @@ struct ProxmoxBackupJob: Codable, Identifiable, Hashable {
             return value == "1" || value.lowercased() == "true"
         }
         return nil
+    }
+}
+
+// MARK: - Node Maintenance / Native Console
+
+struct ProxmoxNodeService: Decodable, Identifiable, Hashable {
+    let service: String
+    let name: String?
+    let description: String?
+    let state: String?
+    let activeState: String?
+    let unitState: String?
+
+    var id: String { service }
+    var isRunning: Bool {
+        activeState == "active" || state == "running"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case service, name, state
+        case description = "desc"
+        case activeState = "active-state"
+        case unitState = "unit-state"
+    }
+}
+
+struct ProxmoxPackageUpdate: Decodable, Identifiable, Hashable {
+    let package: String
+    let title: String?
+    let description: String?
+    let currentVersion: String?
+    let version: String?
+    let origin: String?
+    let priority: String?
+
+    var id: String { package }
+
+    private enum CodingKeys: String, CodingKey {
+        case version = "Version"
+        case package = "Package"
+        case title = "Title"
+        case description = "Description"
+        case currentVersion = "OldVersion"
+        case origin = "Origin"
+        case priority = "Priority"
+    }
+}
+
+struct ProxmoxPCIDevice: Decodable, Identifiable, Hashable {
+    let id: String
+    let vendorName: String?
+    let deviceName: String?
+    let iommuGroup: Int?
+    let mediatedDeviceCapable: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case vendorName = "vendor_name"
+        case deviceName = "device_name"
+        case iommuGroup = "iommugroup"
+        case mediatedDeviceCapable = "mdev"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        vendorName = try container.decodeIfPresent(String.self, forKey: .vendorName)
+        deviceName = try container.decodeIfPresent(String.self, forKey: .deviceName)
+        iommuGroup = container.decodeFlexibleInt(forKey: .iommuGroup)
+        mediatedDeviceCapable = (container.decodeFlexibleInt(forKey: .mediatedDeviceCapable) ?? 0) != 0
+    }
+}
+
+struct ProxmoxUSBDevice: Decodable, Identifiable, Hashable {
+    let busNumber: Int
+    let deviceNumber: Int
+    let port: Int
+    let vendorID: String
+    let productID: String
+    let manufacturer: String?
+    let product: String?
+    let serial: String?
+
+    var id: String { "\(busNumber)-\(deviceNumber)-\(port)" }
+    var selector: String { "host=\(vendorID):\(productID)" }
+
+    private enum CodingKeys: String, CodingKey {
+        case port, manufacturer, product, serial
+        case busNumber = "busnum"
+        case deviceNumber = "devnum"
+        case vendorID = "vendid"
+        case productID = "prodid"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        busNumber = container.decodeFlexibleInt(forKey: .busNumber) ?? 0
+        deviceNumber = container.decodeFlexibleInt(forKey: .deviceNumber) ?? 0
+        port = container.decodeFlexibleInt(forKey: .port) ?? 0
+        vendorID = try container.decode(String.self, forKey: .vendorID)
+        productID = try container.decode(String.self, forKey: .productID)
+        manufacturer = try container.decodeIfPresent(String.self, forKey: .manufacturer)
+        product = try container.decodeIfPresent(String.self, forKey: .product)
+        serial = try container.decodeIfPresent(String.self, forKey: .serial)
+    }
+}
+
+struct ProxmoxConsoleProxy: Decodable, Hashable {
+    let user: String
+    let ticket: String
+    let port: Int
+    let upid: String
+    let password: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case user, ticket, port, upid, password
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        user = try container.decode(String.self, forKey: .user)
+        ticket = try container.decode(String.self, forKey: .ticket)
+        port = container.decodeFlexibleInt(forKey: .port) ?? 0
+        upid = try container.decode(String.self, forKey: .upid)
+        password = try container.decodeIfPresent(String.self, forKey: .password)
     }
 }
 

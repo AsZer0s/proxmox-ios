@@ -7,6 +7,13 @@ struct NodeDetailView: View {
 
     let node: ProxmoxNode
 
+    private var canAccessMaintenance: Bool {
+        ["Sys.Audit", "Sys.Console", "Sys.PowerMgmt"].contains {
+            appState.hasPrivilege($0, on: "/nodes/\(node.node)") ||
+            appState.hasPrivilege($0, on: "/")
+        }
+    }
+
     var body: some View {
         Group {
             if model.isLoading && model.status == nil && model.guests.isEmpty {
@@ -136,6 +143,15 @@ struct NodeDetailView: View {
                 RRDChartView(node: node.node)
             } label: {
                 Label("Charts", systemImage: "chart.xyaxis.line")
+            }
+
+            if canAccessMaintenance {
+                NavigationLink {
+                    NodeMaintenanceView(node: node)
+                        .environmentObject(appState)
+                } label: {
+                    Label("Maintenance", systemImage: "wrench.and.screwdriver")
+                }
             }
         }
     }
