@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import UIKit
 
 enum NativeConsoleTarget {
     case guest(ProxmoxVM, terminal: Bool)
@@ -153,6 +154,19 @@ private struct ProxmoxNativeConsoleWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+            let labels = [
+                "paste": String(localized: "Paste"),
+                "escape": String(localized: "Esc"),
+                "tab": String(localized: "Tab"),
+                "ctrlAltDelete": String(localized: "Ctrl Alt Delete"),
+                "ctrlC": String(localized: "Ctrl C"),
+                "ctrlZ": String(localized: "Ctrl Z"),
+                "ctrlL": String(localized: "Ctrl L"),
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: labels),
+               let json = String(data: data, encoding: .utf8) {
+                evaluate("localizeConsole(\(json))")
+            }
             prepareIfNeeded()
         }
 
@@ -199,6 +213,13 @@ private struct ProxmoxNativeConsoleWebView: UIViewRepresentable {
                 send(.string("1:\(columns):\(rows):"))
             case "ping":
                 send(.string("2"))
+            case "requestPaste":
+                let value = UIPasteboard.general.string ?? ""
+                evaluate("nativePaste(\(Self.javaScriptLiteral(value)))")
+            case "setClipboard":
+                if let value = payload["data"] as? String {
+                    UIPasteboard.general.string = value
+                }
             case "close":
                 close()
             case "clientError":

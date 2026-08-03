@@ -586,6 +586,298 @@ actor ProxmoxAPIService {
         try await get("/access/permissions", as: ProxmoxPermissions.self)
     }
 
+    // MARK: HA / Replication
+
+    func fetchHAStatus() async throws -> [ProxmoxHAStatus] {
+        try await get("/cluster/ha/status/current", as: [ProxmoxHAStatus].self)
+    }
+
+    func fetchHAResources() async throws -> [ProxmoxHAResource] {
+        let summaries = try await get("/cluster/ha/resources", as: [ProxmoxHAResource].self)
+        var resources: [ProxmoxHAResource] = []
+        for summary in summaries {
+            let detail = try? await get(
+                "/cluster/ha/resources/\(summary.sid.pathEscaped)",
+                as: ProxmoxHAResource.self
+            )
+            resources.append(detail ?? summary)
+        }
+        return resources.sorted { $0.sid.localizedStandardCompare($1.sid) == .orderedAscending }
+    }
+
+    func createHAResource(form: [String: String]) async throws {
+        _ = try await post("/cluster/ha/resources", form: form)
+    }
+
+    func updateHAResource(sid: String, form: [String: String]) async throws {
+        _ = try await put("/cluster/ha/resources/\(sid.pathEscaped)", form: form)
+    }
+
+    func deleteHAResource(sid: String, purge: Bool = false) async throws {
+        _ = try await delete(
+            "/cluster/ha/resources/\(sid.pathEscaped)",
+            form: ["purge": purge ? "1" : "0"]
+        )
+    }
+
+    func fetchHAGroups() async throws -> [ProxmoxHAGroup] {
+        let summaries = try await get("/cluster/ha/groups", as: [ProxmoxHAGroup].self)
+        var groups: [ProxmoxHAGroup] = []
+        for summary in summaries {
+            let detail = try? await get(
+                "/cluster/ha/groups/\(summary.group.pathEscaped)",
+                as: ProxmoxHAGroup.self
+            )
+            groups.append(detail ?? summary)
+        }
+        return groups.sorted { $0.group.localizedStandardCompare($1.group) == .orderedAscending }
+    }
+
+    func createHAGroup(form: [String: String]) async throws {
+        _ = try await post("/cluster/ha/groups", form: form)
+    }
+
+    func updateHAGroup(id: String, form: [String: String]) async throws {
+        _ = try await put("/cluster/ha/groups/\(id.pathEscaped)", form: form)
+    }
+
+    func deleteHAGroup(id: String) async throws {
+        _ = try await delete("/cluster/ha/groups/\(id.pathEscaped)")
+    }
+
+    func fetchReplicationJobs() async throws -> [ProxmoxReplicationJob] {
+        try await get("/cluster/replication", as: [ProxmoxReplicationJob].self)
+            .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+    }
+
+    func createReplicationJob(form: [String: String]) async throws {
+        _ = try await post("/cluster/replication", form: form)
+    }
+
+    func updateReplicationJob(id: String, form: [String: String]) async throws {
+        _ = try await put("/cluster/replication/\(id.pathEscaped)", form: form)
+    }
+
+    func deleteReplicationJob(id: String, force: Bool = false, keep: Bool = false) async throws {
+        _ = try await delete(
+            "/cluster/replication/\(id.pathEscaped)",
+            form: ["force": force ? "1" : "0", "keep": keep ? "1" : "0"]
+        )
+    }
+
+    // MARK: Access Control
+
+    func fetchAccessUsers() async throws -> [ProxmoxAccessUser] {
+        try await get("/access/users?full=1", as: [ProxmoxAccessUser].self)
+            .sorted { $0.userid.localizedCaseInsensitiveCompare($1.userid) == .orderedAscending }
+    }
+
+    func createAccessUser(form: [String: String]) async throws {
+        _ = try await post("/access/users", form: form)
+    }
+
+    func updateAccessUser(userid: String, form: [String: String]) async throws {
+        _ = try await put("/access/users/\(userid.pathEscaped)", form: form)
+    }
+
+    func deleteAccessUser(userid: String) async throws {
+        _ = try await delete("/access/users/\(userid.pathEscaped)")
+    }
+
+    func fetchAPITokens(userid: String) async throws -> [ProxmoxAPIToken] {
+        try await get(
+            "/access/users/\(userid.pathEscaped)/token",
+            as: [ProxmoxAPIToken].self
+        )
+        .sorted { $0.tokenid.localizedCaseInsensitiveCompare($1.tokenid) == .orderedAscending }
+    }
+
+    func createAPIToken(
+        userid: String,
+        tokenid: String,
+        form: [String: String]
+    ) async throws -> ProxmoxAPITokenSecret {
+        try await postDecoded(
+            "/access/users/\(userid.pathEscaped)/token/\(tokenid.pathEscaped)",
+            form: form,
+            as: ProxmoxAPITokenSecret.self
+        )
+    }
+
+    func updateAPIToken(userid: String, tokenid: String, form: [String: String]) async throws {
+        _ = try await put(
+            "/access/users/\(userid.pathEscaped)/token/\(tokenid.pathEscaped)",
+            form: form
+        )
+    }
+
+    func deleteAPIToken(userid: String, tokenid: String) async throws {
+        _ = try await delete(
+            "/access/users/\(userid.pathEscaped)/token/\(tokenid.pathEscaped)"
+        )
+    }
+
+    func fetchRoles() async throws -> [ProxmoxRole] {
+        try await get("/access/roles", as: [ProxmoxRole].self)
+            .sorted { $0.roleid.localizedCaseInsensitiveCompare($1.roleid) == .orderedAscending }
+    }
+
+    func createRole(form: [String: String]) async throws {
+        _ = try await post("/access/roles", form: form)
+    }
+
+    func updateRole(id: String, form: [String: String]) async throws {
+        _ = try await put("/access/roles/\(id.pathEscaped)", form: form)
+    }
+
+    func deleteRole(id: String) async throws {
+        _ = try await delete("/access/roles/\(id.pathEscaped)")
+    }
+
+    func fetchACLs() async throws -> [ProxmoxACLEntry] {
+        try await get("/access/acl", as: [ProxmoxACLEntry].self)
+            .sorted {
+                if $0.path != $1.path { return $0.path < $1.path }
+                return $0.ugid < $1.ugid
+            }
+    }
+
+    func updateACL(form: [String: String]) async throws {
+        _ = try await put("/access/acl", form: form)
+    }
+
+    // MARK: Cluster Infrastructure
+
+    func fetchNodeNetworkInterfaces(node: String) async throws -> [ProxmoxNetworkInterface] {
+        try await get("/nodes/\(node)/network", as: [ProxmoxNetworkInterface].self)
+            .sorted { $0.iface.localizedStandardCompare($1.iface) == .orderedAscending }
+    }
+
+    func createNodeNetworkInterface(node: String, form: [String: String]) async throws {
+        _ = try await post("/nodes/\(node)/network", form: form)
+    }
+
+    func updateNodeNetworkInterface(
+        node: String,
+        iface: String,
+        form: [String: String]
+    ) async throws {
+        _ = try await put("/nodes/\(node)/network/\(iface.pathEscaped)", form: form)
+    }
+
+    func deleteNodeNetworkInterface(node: String, iface: String) async throws {
+        _ = try await delete("/nodes/\(node)/network/\(iface.pathEscaped)")
+    }
+
+    func applyNodeNetworkConfiguration(node: String) async throws {
+        _ = try await put("/nodes/\(node)/network", form: [:])
+    }
+
+    func revertNodeNetworkConfiguration(node: String) async throws {
+        _ = try await delete("/nodes/\(node)/network")
+    }
+
+    func fetchStorageConfigs() async throws -> [ProxmoxStorageConfig] {
+        try await get("/storage", as: [ProxmoxStorageConfig].self)
+            .sorted { $0.storage.localizedCaseInsensitiveCompare($1.storage) == .orderedAscending }
+    }
+
+    func createStorageConfig(form: [String: String]) async throws {
+        _ = try await post("/storage", form: form)
+    }
+
+    func updateStorageConfig(id: String, form: [String: String]) async throws {
+        _ = try await put("/storage/\(id.pathEscaped)", form: form)
+    }
+
+    func deleteStorageConfig(id: String) async throws {
+        _ = try await delete("/storage/\(id.pathEscaped)")
+    }
+
+    func fetchCephStatus(node: String) async throws -> ProxmoxCephStatus {
+        try await get("/nodes/\(node)/ceph/status", as: ProxmoxCephStatus.self)
+    }
+
+    func fetchCephPools(node: String) async throws -> [ProxmoxCephPool] {
+        try await get("/nodes/\(node)/ceph/pool", as: [ProxmoxCephPool].self)
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func createCephPool(node: String, form: [String: String]) async throws {
+        _ = try await post("/nodes/\(node)/ceph/pool", form: form)
+    }
+
+    func updateCephPool(node: String, name: String, form: [String: String]) async throws {
+        _ = try await put("/nodes/\(node)/ceph/pool/\(name.pathEscaped)", form: form)
+    }
+
+    func deleteCephPool(node: String, name: String) async throws {
+        _ = try await delete("/nodes/\(node)/ceph/pool/\(name.pathEscaped)")
+    }
+
+    func fetchSDNZones() async throws -> [ProxmoxSDNZone] {
+        try await get("/cluster/sdn/zones", as: [ProxmoxSDNZone].self)
+            .sorted { $0.zone.localizedCaseInsensitiveCompare($1.zone) == .orderedAscending }
+    }
+
+    func createSDNZone(form: [String: String]) async throws {
+        _ = try await post("/cluster/sdn/zones", form: form)
+    }
+
+    func updateSDNZone(id: String, form: [String: String]) async throws {
+        _ = try await put("/cluster/sdn/zones/\(id.pathEscaped)", form: form)
+    }
+
+    func deleteSDNZone(id: String) async throws {
+        _ = try await delete("/cluster/sdn/zones/\(id.pathEscaped)")
+    }
+
+    func fetchSDNVNets() async throws -> [ProxmoxSDNVNet] {
+        try await get("/cluster/sdn/vnets", as: [ProxmoxSDNVNet].self)
+            .sorted { $0.vnet.localizedCaseInsensitiveCompare($1.vnet) == .orderedAscending }
+    }
+
+    func createSDNVNet(form: [String: String]) async throws {
+        _ = try await post("/cluster/sdn/vnets", form: form)
+    }
+
+    func updateSDNVNet(id: String, form: [String: String]) async throws {
+        _ = try await put("/cluster/sdn/vnets/\(id.pathEscaped)", form: form)
+    }
+
+    func deleteSDNVNet(id: String) async throws {
+        _ = try await delete("/cluster/sdn/vnets/\(id.pathEscaped)")
+    }
+
+    func fetchSDNSubnets(vnet: String) async throws -> [ProxmoxSDNSubnet] {
+        try await get(
+            "/cluster/sdn/vnets/\(vnet.pathEscaped)/subnets",
+            as: [ProxmoxSDNSubnet].self
+        )
+        .sorted { $0.subnet.localizedCaseInsensitiveCompare($1.subnet) == .orderedAscending }
+    }
+
+    func createSDNSubnet(vnet: String, form: [String: String]) async throws {
+        _ = try await post("/cluster/sdn/vnets/\(vnet.pathEscaped)/subnets", form: form)
+    }
+
+    func updateSDNSubnet(vnet: String, id: String, form: [String: String]) async throws {
+        _ = try await put(
+            "/cluster/sdn/vnets/\(vnet.pathEscaped)/subnets/\(id.pathEscaped)",
+            form: form
+        )
+    }
+
+    func deleteSDNSubnet(vnet: String, id: String) async throws {
+        _ = try await delete(
+            "/cluster/sdn/vnets/\(vnet.pathEscaped)/subnets/\(id.pathEscaped)"
+        )
+    }
+
+    func applySDNConfiguration() async throws {
+        _ = try await put("/cluster/sdn", form: [:])
+    }
+
     // MARK: Storage
 
     func fetchStorages(node: String) async throws -> [ProxmoxStorage] {
@@ -825,6 +1117,32 @@ actor ProxmoxAPIService {
                 "storage": storage,
                 "delete": deleteSource ? "1" : "0",
             ]
+        )
+    }
+
+    @discardableResult
+    func moveLXCVolume(
+        node: String,
+        vmid: Int,
+        volume: String,
+        storage: String,
+        deleteSource: Bool = true
+    ) async throws -> String {
+        try await post(
+            "/nodes/\(node)/lxc/\(vmid)/move_volume",
+            form: [
+                "volume": volume,
+                "storage": storage,
+                "delete": deleteSource ? "1" : "0",
+            ]
+        )
+    }
+
+    @discardableResult
+    func deleteLXCVolume(node: String, vmid: Int, volume: String) async throws -> String {
+        try await put(
+            ProxmoxEndpoint.guestConfig(node: node, type: .lxc, vmid: vmid),
+            form: ["delete": volume]
         )
     }
 

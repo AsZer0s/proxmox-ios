@@ -5,17 +5,26 @@
   <style>
     html, body, #screen { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #101114; }
     #screen canvas { margin: auto; }
-    #keyboardButton { position: fixed; right: 12px; bottom: 12px; z-index: 2; width: 46px; height: 38px; border: 0; border-radius: 10px; color: white; background: rgba(50, 50, 55, .85); font-size: 21px; }
+    #consoleToolbar { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 2; display: flex; gap: 7px; justify-content: flex-end; pointer-events: none; }
+    #consoleToolbar button { pointer-events: auto; min-width: 42px; height: 38px; padding: 0 10px; border: 0; border-radius: 10px; color: white; background: rgba(50, 50, 55, .88); font-size: 14px; }
+    #keyboardButton { font-size: 21px !important; }
     #keyboardInput { position: fixed; left: -100px; bottom: 0; width: 1px; height: 1px; opacity: 0; }
   </style>
 </head>
 <body>
   <div id="screen"></div>
-  <button id="keyboardButton" type="button">⌨︎</button>
+  <div id="consoleToolbar">
+    <button id="pasteButton" type="button">Paste</button>
+    <button id="escButton" type="button">Esc</button>
+    <button id="tabButton" type="button">Tab</button>
+    <button id="cadButton" type="button">Ctrl Alt Del</button>
+    <button id="keyboardButton" type="button">⌨︎</button>
+  </div>
   <textarea id="keyboardInput" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
   <script>
     let nativeSocket = null;
     const pendingMessages = [];
+    let activeRFB = null;
 
     class NativeWebSocket {
       static CONNECTING = 0;
@@ -65,6 +74,7 @@
         const rfb = new RFB(document.getElementById("screen"), "native://console", {
           credentials: { password: password }
         });
+        activeRFB = rfb;
         rfb.scaleViewport = true;
         rfb.resizeSession = true;
         rfb.focusOnClick = true;
@@ -82,6 +92,14 @@
           rfb.sendKey(keysym, null, true);
           rfb.sendKey(keysym, null, false);
         };
+        document.getElementById("pasteButton").addEventListener("click", () =>
+          window.webkit.messageHandlers.consoleSocket.postMessage({ action: "requestPaste" }));
+        document.getElementById("escButton").addEventListener("click", () => sendKeysym(0xff1b));
+        document.getElementById("tabButton").addEventListener("click", () => sendKeysym(0xff09));
+        document.getElementById("cadButton").addEventListener("click", () => rfb.sendCtrlAltDel());
+        rfb.addEventListener("clipboard", event => window.webkit.messageHandlers.consoleSocket.postMessage({
+          action: "setClipboard", data: event.detail.text || ""
+        }));
         keyboardButton.addEventListener("click", () => {
           resetInput();
           keyboardInput.focus();
@@ -117,6 +135,16 @@
           message: String(error)
         });
       }
+    };
+
+    window.nativePaste = function(text) {
+      activeRFB?.clipboardPasteFrom(text);
+    };
+    window.localizeConsole = function(labels) {
+      document.getElementById("pasteButton").textContent = labels.paste;
+      document.getElementById("escButton").textContent = labels.escape;
+      document.getElementById("tabButton").textContent = labels.tab;
+      document.getElementById("cadButton").textContent = labels.ctrlAltDelete;
     };
 
     window.nativeSocketOpened = function() {

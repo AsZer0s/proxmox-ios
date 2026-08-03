@@ -41,6 +41,11 @@ Whether you are checking cluster health, responding to an unavailable guest, or 
 | **Performance charts** | Explore CPU, memory, network, and disk history for nodes and guests across hourly, daily, and weekly ranges. |
 | **Task center** | Browse persistent server task history across nodes, inspect results and logs, and cancel running tasks. |
 | **Node maintenance** | Control node services, refresh package indexes, review available updates, and safely reboot or shut down nodes. |
+| **Alerts and notifications** | Detect offline nodes, high CPU or memory pressure, failed backups, and low storage, with configurable local notifications. |
+| **HA and replication** | Inspect HA state and manage HA resources, migration groups, and replication jobs. |
+| **Users and permissions** | Manage users, roles, ACL entries, and API Tokens, including one-time token secret handling. |
+| **Cluster infrastructure** | Configure node networking, cluster storage, Ceph pools and health, and SDN zones, VNets, and subnets. |
+| **Batch operations** | Select multiple VMs and containers to start, shut down, force-stop, migrate, or back up together. |
 
 ## Secure by design
 
@@ -58,6 +63,7 @@ Whether you are checking cluster health, responding to an unavailable guest, or 
 - SwiftUI interface designed for iPhone and iPad
 - English and Simplified Chinese localization
 - Foreground auto-refresh and pull-to-refresh
+- Configurable in-app monitoring every minute while the app is active
 - Permission-aware controls based on the connected Proxmox account
 - Clear confirmation for force stop, deletion, snapshot rollback, and other high-risk operations
 - Dark Mode, Dynamic Type, and familiar system interactions

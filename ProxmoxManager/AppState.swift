@@ -32,6 +32,7 @@ final class AppState: ObservableObject {
     @Published var permissions: ProxmoxPermissions?
     @Published var appLocked = true
     @Published var taskCenter = ProxmoxTaskCenter()
+    @Published var alertCenter = ProxmoxAlertCenter()
     private var authenticationObserver: NSObjectProtocol?
     /// Cancels an in-flight connection when a new one is started.
     private var connectionTask: Task<Void, Never>?
@@ -184,6 +185,7 @@ final class AppState: ObservableObject {
                     nodes: nodes,
                     service: service
                 )
+                await self.alertCenter.activate(serverID: server.id, service: service)
             } catch let error as ProxmoxError {
                 guard !Task.isCancelled else { return }
                 self.connectionState = .disconnected
@@ -228,6 +230,7 @@ final class AppState: ObservableObject {
                     nodes: nodes,
                     service: service
                 )
+                await alertCenter.activate(serverID: serverID, service: service)
             }
         } catch {
             self.lastError = error.localizedDescription
@@ -243,6 +246,7 @@ final class AppState: ObservableObject {
         service = nil
         connectedServer = nil
         connectionState = .disconnected
+        alertCenter.deactivate()
     }
 
     /// Refresh permissions for the current server.
@@ -272,5 +276,6 @@ final class AppState: ObservableObject {
         connectionState = .disconnected
         permissions = nil
         taskCenter.deactivate()
+        alertCenter.deactivate()
     }
 }

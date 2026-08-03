@@ -24,6 +24,12 @@ struct MainDashboardView: View {
                     Label("Tasks", systemImage: "checkmark.circle")
                 }
 
+            OperationsView()
+                .environmentObject(appState.alertCenter)
+                .tabItem {
+                    Label("Manage", systemImage: "slider.horizontal.3")
+                }
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")

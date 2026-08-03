@@ -559,7 +559,7 @@ private struct BackupJobEditorView: View {
                                     }
                                 }
                             )) {
-                                Text("\(guest.displayName) · \(guest.vmid)")
+                                Text("\(guest.displayName) · \(guest.vmid) · \(guest.node)")
                             }
                         }
                     }
@@ -638,10 +638,30 @@ private struct BackupJobEditorView: View {
         defer { isLoading = false }
         do {
             async let storagesRequest = service.fetchStorages(node: node)
-            async let guestsRequest = service.fetchGuests(node: node)
-            let (loadedStorages, loadedGuests) = try await (storagesRequest, guestsRequest)
+            async let resourcesRequest = service.fetchClusterResources()
+            let (loadedStorages, resources) = try await (storagesRequest, resourcesRequest)
             storages = loadedStorages
-            guests = loadedGuests
+            guests = resources.compactMap { resource in
+                guard (resource.type == .qemu || resource.type == .lxc),
+                      let vmid = resource.vmid,
+                      let guestNode = resource.node else { return nil }
+                var guest = ProxmoxVM(
+                    vmid: vmid,
+                    name: resource.name,
+                    status: resource.status ?? "unknown",
+                    cpu: resource.cpu,
+                    cpus: resource.maxcpu,
+                    mem: resource.mem,
+                    maxmem: resource.maxmem,
+                    disk: resource.disk,
+                    maxdisk: resource.maxdisk,
+                    uptime: resource.uptime
+                )
+                guest.node = guestNode
+                guest.type = resource.type == .lxc ? .lxc : .qemu
+                return guest
+            }
+            .sorted { $0.vmid < $1.vmid }
             if !compatibleStorages.contains(where: { $0.storage == selectedStorage }) {
                 selectedStorage = compatibleStorages.first?.storage ?? ""
             }

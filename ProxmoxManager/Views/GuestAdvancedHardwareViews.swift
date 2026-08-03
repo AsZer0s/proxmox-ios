@@ -129,13 +129,23 @@ struct MoveGuestDiskView: View {
         error = nil
         defer { isSaving = false }
         do {
-            let upid = try await service.moveGuestDisk(
-                node: guest.node,
-                vmid: guest.vmid,
-                disk: disk.key,
-                storage: selectedStorage,
-                deleteSource: deleteSource
-            )
+            let upid = if guest.type == .lxc {
+                try await service.moveLXCVolume(
+                    node: guest.node,
+                    vmid: guest.vmid,
+                    volume: disk.key,
+                    storage: selectedStorage,
+                    deleteSource: deleteSource
+                )
+            } else {
+                try await service.moveGuestDisk(
+                    node: guest.node,
+                    vmid: guest.vmid,
+                    disk: disk.key,
+                    storage: selectedStorage,
+                    deleteSource: deleteSource
+                )
+            }
             appState.taskCenter.track(
                 upid: upid,
                 node: guest.node,

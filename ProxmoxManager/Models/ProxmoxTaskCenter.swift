@@ -102,11 +102,14 @@ struct ManagedProxmoxTask: Identifiable, Codable {
 @MainActor
 final class ProxmoxTaskCenter: ObservableObject {
     @Published private(set) var tasks: [ManagedProxmoxTask] = []
+    @Published private(set) var isLoadingMore = false
+    @Published private(set) var hasMore = true
 
     private var serverID: UUID?
     private var service: ProxmoxAPIService?
     private var nodes: [String] = []
     private var refreshTask: Task<Void, Never>?
+    private var loadedPerNode = 100
 
     func activate(
         serverID: UUID,
@@ -117,6 +120,8 @@ final class ProxmoxTaskCenter: ObservableObject {
         self.serverID = serverID
         self.nodes = nodes
         self.service = service
+        loadedPerNode = 100
+        hasMore = true
         tasks = loadPersistedTasks(serverID: serverID)
         await refresh()
         refreshTask = Task { @MainActor [weak self] in
@@ -135,17 +140,20 @@ final class ProxmoxTaskCenter: ObservableObject {
         service = nil
         nodes = []
         tasks = []
+        loadedPerNode = 100
+        hasMore = true
     }
 
     func refresh() async {
         guard let service, !nodes.isEmpty else { return }
+        let fetchLimit = loadedPerNode
         let nodeTasks = await withTaskGroup(of: [ProxmoxNodeTask].self) { group in
             for node in nodes {
                 group.addTask {
                     (try? await service.fetchNodeTasks(
                         node: node,
                         source: "all",
-                        limit: 100
+                        limit: fetchLimit
                     )) ?? []
                 }
             }
@@ -170,9 +178,19 @@ final class ProxmoxTaskCenter: ObservableObject {
         }
         tasks = merged.values
             .sorted { $0.startedAt > $1.startedAt }
-            .prefix(200)
+            .prefix(max(200, loadedPerNode * max(nodes.count, 1)))
             .map { $0 }
         persist()
+    }
+
+    func loadMore() async {
+        guard !isLoadingMore, hasMore else { return }
+        isLoadingMore = true
+        let previousCount = tasks.count
+        loadedPerNode += 100
+        await refresh()
+        hasMore = tasks.count > previousCount
+        isLoadingMore = false
     }
 
     func track(
@@ -323,6 +341,22 @@ final class ProxmoxTaskCenter: ObservableObject {
 struct TaskCenterView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var taskCenter: ProxmoxTaskCenter
+    @State private var searchText = ""
+    @State private var selectedState: ManagedProxmoxTask.State?
+    @State private var selectedNode: String?
+    @State private var selectedType: String?
+
+    private var filteredTasks: [ManagedProxmoxTask] {
+        taskCenter.tasks.filter { task in
+            (searchText.isEmpty || task.title.localizedCaseInsensitiveContains(searchText) || task.object.localizedCaseInsensitiveContains(searchText) || task.upid.localizedCaseInsensitiveContains(searchText)) &&
+            (selectedState == nil || task.state == selectedState) &&
+            (selectedNode == nil || task.node == selectedNode) &&
+            (selectedType == nil || task.taskType == selectedType)
+        }
+    }
+
+    private var nodes: [String] { Array(Set(taskCenter.tasks.map(\.node))).sorted() }
+    private var types: [String] { Array(Set(taskCenter.tasks.compactMap(\.taskType))).sorted() }
 
     var body: some View {
         NavigationStack {
@@ -335,7 +369,7 @@ struct TaskCenterView: View {
                     )
                 } else {
                     List {
-                        ForEach(taskCenter.tasks) { task in
+                        ForEach(filteredTasks) { task in
                             Section {
                                 TaskRow(task: task)
                                 if task.log.isEmpty {
@@ -361,16 +395,43 @@ struct TaskCenterView: View {
                                 }
                             }
                         }
+                        if taskCenter.hasMore {
+                            Section {
+                                Button {
+                                    Task { await taskCenter.loadMore() }
+                                } label: {
+                                    HStack { Spacer(); if taskCenter.isLoadingMore { ProgressView() } else { Text("Load More Tasks") }; Spacer() }
+                                }
+                                .disabled(taskCenter.isLoadingMore)
+                            }
+                        }
                     }
                     .listStyle(.insetGrouped)
+                    .searchable(text: $searchText, prompt: "Search tasks")
                 }
             }
             .navigationTitle("Tasks")
             .refreshable { await taskCenter.refresh() }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if taskCenter.tasks.contains(where: { $0.state == .running }) {
-                        ProgressView()
+                    Menu {
+                        Picker("Status", selection: $selectedState) {
+                            Text("All Statuses").tag(nil as ManagedProxmoxTask.State?)
+                            Text("Running").tag(ManagedProxmoxTask.State.running as ManagedProxmoxTask.State?)
+                            Text("Succeeded").tag(ManagedProxmoxTask.State.succeeded as ManagedProxmoxTask.State?)
+                            Text("Failed").tag(ManagedProxmoxTask.State.failed as ManagedProxmoxTask.State?)
+                        }
+                        Picker("Node", selection: $selectedNode) {
+                            Text("All Nodes").tag(nil as String?)
+                            ForEach(nodes, id: \.self) { Text($0).tag($0 as String?) }
+                        }
+                        Picker("Task Type", selection: $selectedType) {
+                            Text("All Task Types").tag(nil as String?)
+                            ForEach(types, id: \.self) { Text($0).tag($0 as String?) }
+                        }
+                        Button("Reset Filters") { selectedState = nil; selectedNode = nil; selectedType = nil; searchText = "" }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
                     }
                 }
                 ToolbarItem(placement: .navigationBarLeading) {

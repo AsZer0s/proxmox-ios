@@ -115,12 +115,12 @@ struct GuestHardwareEditorView: View {
                             if canEditDisks {
                                 Menu {
                                     Button("Expand") { resizingDisk = disk }
+                                    Button("Move to Storage") { movingDisk = disk }
                                     if guest.type == .qemu {
-                                        Button("Move to Storage") { movingDisk = disk }
                                         Button("Detach") { diskToDetach = disk }
-                                        Button("Delete Permanently", role: .destructive) {
-                                            diskToDelete = disk
-                                        }
+                                    }
+                                    Button("Delete Permanently", role: .destructive) {
+                                        diskToDelete = disk
                                     }
                                 } label: {
                                     Image(systemName: "ellipsis.circle")
@@ -484,12 +484,21 @@ struct GuestHardwareEditorView: View {
             diskToDelete = nil
         }
         do {
-            let upid = try await service.unlinkGuestDisk(
-                node: guest.node,
-                vmid: guest.vmid,
-                disk: disk.key,
-                permanentlyDelete: permanentlyDelete
-            )
+            let upid: String
+            if guest.type == .lxc {
+                upid = try await service.deleteLXCVolume(
+                    node: guest.node,
+                    vmid: guest.vmid,
+                    volume: disk.key
+                )
+            } else {
+                upid = try await service.unlinkGuestDisk(
+                    node: guest.node,
+                    vmid: guest.vmid,
+                    disk: disk.key,
+                    permanentlyDelete: permanentlyDelete
+                )
+            }
             if !upid.isEmpty {
                 appState.taskCenter.track(
                     upid: upid,

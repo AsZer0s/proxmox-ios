@@ -955,4 +955,51 @@ final class ProxmoxManagerTests: XCTestCase {
 
         XCTAssertEqual(node.cpuFraction, 0.42)
     }
+
+    // MARK: - Cluster management models
+
+    func testHAAndReplicationDecodeFlexibleAPIValues() throws {
+        let resource = try JSONDecoder().decode(
+            ProxmoxHAResource.self,
+            from: Data(#"{"sid":"vm:100","state":"started","max_restart":"2","max_relocate":1,"failback":1,"auto-rebalance":"0"}"#.utf8)
+        )
+        XCTAssertEqual(resource.sid, "vm:100")
+        XCTAssertEqual(resource.maxRestart, 2)
+        XCTAssertEqual(resource.maxRelocate, 1)
+        XCTAssertEqual(resource.failback, true)
+        XCTAssertEqual(resource.autoRebalance, false)
+
+        let replication = try JSONDecoder().decode(
+            ProxmoxReplicationJob.self,
+            from: Data(#"{"id":"100-0","guest":"100","source":"pve1","target":"pve2","disable":"1","rate":"25.5","remove_job":1}"#.utf8)
+        )
+        XCTAssertEqual(replication.guest, 100)
+        XCTAssertTrue(replication.disabled)
+        XCTAssertEqual(replication.rate, 25.5)
+        XCTAssertEqual(replication.removeJob, "1")
+    }
+
+    func testAccessAndInfrastructureDecodePVEVariants() throws {
+        let user = try JSONDecoder().decode(
+            ProxmoxAccessUser.self,
+            from: Data(#"{"userid":"ops@pve","groups":"admins,auditors","enable":"0"}"#.utf8)
+        )
+        XCTAssertEqual(user.groups, ["admins", "auditors"])
+        XCTAssertFalse(user.enabled)
+
+        let network = try JSONDecoder().decode(
+            ProxmoxNetworkInterface.self,
+            from: Data(#"{"iface":"vmbr0","type":"bridge","active":1,"autostart":"1","bridge_vlan_aware":"1","mtu":"1500"}"#.utf8)
+        )
+        XCTAssertTrue(network.active)
+        XCTAssertTrue(network.autostart)
+        XCTAssertTrue(network.bridgeVLANAwareness)
+        XCTAssertEqual(network.mtu, 1500)
+
+        let subnet = try JSONDecoder().decode(
+            ProxmoxSDNSubnet.self,
+            from: Data(#"{"subnet":"zone-10.0.0.0-24","vnet":"private","gateway":"10.0.0.1","snat":1,"type":"subnet"}"#.utf8)
+        )
+        XCTAssertTrue(subnet.snat)
+    }
 }
