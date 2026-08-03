@@ -23,9 +23,12 @@ struct ProxmoxHARule: Decodable, Identifiable, Hashable {
         comment = try? c.decodeIfPresent(String.self, forKey: .comment)
     }
     private static func bool(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Bool? {
-        (try? c.decodeIfPresent(Bool.self, forKey: key))
-            ?? (try? c.decodeIfPresent(Int.self, forKey: key)).map { $0 != 0 }
-            ?? (try? c.decodeIfPresent(String.self, forKey: key)).map { $0 == "1" || $0.lowercased() == "true" }
+        if let value = try? c.decodeIfPresent(Bool.self, forKey: key) { return value }
+        if let value = try? c.decodeIfPresent(Int.self, forKey: key) { return value != 0 }
+        if let value = try? c.decodeIfPresent(String.self, forKey: key) {
+            return value == "1" || value.lowercased() == "true"
+        }
+        return nil
     }
 }
 
@@ -42,8 +45,8 @@ struct ProxmoxClusterStatusEntry: Decodable, Identifiable, Hashable {
     let version: Int?
     enum CodingKeys:String,CodingKey{case id,name,type,ip,nodeid,nodes,online,local,quorate,version}
     init(from decoder:Decoder)throws{let c=try decoder.container(keyedBy:CodingKeys.self);id=try c.decode(String.self,forKey:.id);name=try c.decode(String.self,forKey:.name);type=try c.decode(String.self,forKey:.type);ip=try? c.decodeIfPresent(String.self,forKey:.ip);nodeid=Self.int(c,.nodeid);nodes=Self.int(c,.nodes);online=Self.bool(c,.online);local=Self.bool(c,.local);quorate=Self.bool(c,.quorate);version=Self.int(c,.version)}
-    private static func int(_ c:KeyedDecodingContainer<CodingKeys>,_ k:CodingKeys)->Int?{(try? c.decodeIfPresent(Int.self,forKey:k)) ?? Int((try? c.decodeIfPresent(String.self,forKey:k)) ?? "")}
-    private static func bool(_ c:KeyedDecodingContainer<CodingKeys>,_ k:CodingKeys)->Bool?{(try? c.decodeIfPresent(Bool.self,forKey:k)) ?? int(c,k).map{$0 != 0}}
+    private static func int(_ c:KeyedDecodingContainer<CodingKeys>,_ k:CodingKeys)->Int?{if let value=try? c.decodeIfPresent(Int.self,forKey:k){return value};if let value=try? c.decodeIfPresent(String.self,forKey:k){return Int(value)};return nil}
+    private static func bool(_ c:KeyedDecodingContainer<CodingKeys>,_ k:CodingKeys)->Bool?{if let value=try? c.decodeIfPresent(Bool.self,forKey:k){return value};if let value=int(c,k){return value != 0};return nil}
 }
 
 struct ProxmoxCephDaemon: Decodable, Identifiable, Hashable {
@@ -57,8 +60,8 @@ struct ProxmoxCephDaemon: Decodable, Identifiable, Hashable {
     let cephVersionShort: String?
     var id: String { name }
     enum CodingKeys: String, CodingKey { case name, host, state, service, quorum, rank, addr; case cephVersionShort = "ceph_version_short" }
-    init(from decoder:Decoder)throws{let c=try decoder.container(keyedBy:CodingKeys.self);name=try c.decode(String.self,forKey:.name);host=try? c.decodeIfPresent(String.self,forKey:.host);state=try? c.decodeIfPresent(String.self,forKey:.state);service=Self.bool(c,.service);quorum=Self.bool(c,.quorum);rank=(try? c.decodeIfPresent(Int.self,forKey:.rank)) ?? Int((try? c.decodeIfPresent(String.self,forKey:.rank)) ?? "");addr=try? c.decodeIfPresent(String.self,forKey:.addr);cephVersionShort=try? c.decodeIfPresent(String.self,forKey:.cephVersionShort)}
-    private static func bool(_ c:KeyedDecodingContainer<CodingKeys>,_ k:CodingKeys)->Bool?{(try? c.decodeIfPresent(Bool.self,forKey:k)) ?? (try? c.decodeIfPresent(Int.self,forKey:k)).map{$0 != 0} ?? (try? c.decodeIfPresent(String.self,forKey:k)).map{$0=="1" || $0.lowercased()=="true"}}
+    init(from decoder:Decoder)throws{let c=try decoder.container(keyedBy:CodingKeys.self);name=try c.decode(String.self,forKey:.name);host=try? c.decodeIfPresent(String.self,forKey:.host);state=try? c.decodeIfPresent(String.self,forKey:.state);service=Self.bool(c,.service);quorum=Self.bool(c,.quorum);if let value=try? c.decodeIfPresent(Int.self,forKey:.rank){rank=value}else if let value=try? c.decodeIfPresent(String.self,forKey:.rank){rank=Int(value)}else{rank=nil};addr=try? c.decodeIfPresent(String.self,forKey:.addr);cephVersionShort=try? c.decodeIfPresent(String.self,forKey:.cephVersionShort)}
+    private static func bool(_ c:KeyedDecodingContainer<CodingKeys>,_ k:CodingKeys)->Bool?{if let value=try? c.decodeIfPresent(Bool.self,forKey:k){return value};if let value=try? c.decodeIfPresent(Int.self,forKey:k){return value != 0};if let value=try? c.decodeIfPresent(String.self,forKey:k){return value=="1" || value.lowercased()=="true"};return nil}
 }
 
 struct ProxmoxCephOSDResponse: Decodable, Hashable {
