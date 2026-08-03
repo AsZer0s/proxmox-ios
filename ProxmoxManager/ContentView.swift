@@ -55,11 +55,10 @@ struct ContentView: View {
 struct ServerListView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showingAddServer = false
+    @State private var showingAllClusters = false
     @State private var editingServer: ProxmoxServer?
     @State private var serverToDelete: ProxmoxServer?
     @State private var showingDeleteConfirmation = false
-    @State private var totpCode = ""
-    @State private var showingTOTP = false
 
     var body: some View {
         NavigationStack {
@@ -93,6 +92,10 @@ struct ServerListView: View {
             }
             .navigationTitle("Servers")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showingAllClusters = true } label: { Image(systemName: "square.grid.2x2") }
+                        .disabled(appState.servers.isEmpty)
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingAddServer = true
@@ -108,6 +111,9 @@ struct ServerListView: View {
             }
             .sheet(isPresented: $showingAddServer) {
                 ServerSetupView(mode: .add)
+            }
+            .sheet(isPresented: $showingAllClusters) {
+                NavigationStack { MultiClusterOverviewView() }
             }
             .sheet(item: $editingServer) { server in
                 ServerSetupView(mode: .edit(server))
@@ -128,20 +134,8 @@ struct ServerListView: View {
             } message: {
                 Text("This will remove the server and all stored credentials. This action cannot be undone.")
             }
-            .alert("TOTP Code Required", isPresented: $showingTOTP) {
-                TextField("Code", text: $totpCode)
-                    .keyboardType(.numberPad)
-                Button("Submit") {
-                    let code = totpCode
-                    totpCode = ""
-                    Task { await appState.submitTOTP(code: code) }
-                }
-                Button("Cancel", role: .cancel) {
-                    totpCode = ""
-                    appState.cancelPendingTFA()
-                }
-            } message: {
-                Text("Enter your two-factor authentication code.")
+            .sheet(item: $appState.pendingTFAChallenge) { challenge in
+                TFAChallengeView(challenge: challenge)
             }
             .alert(item: $appState.pendingCertificateConfirmation) { confirmation in
                 Alert(
@@ -152,11 +146,6 @@ struct ServerListView: View {
                     },
                     secondaryButton: .cancel()
                 )
-            }
-            .onChange(of: appState.pendingTFAChallenge?.id) { _ in
-                if appState.pendingTFAChallenge != nil {
-                    showingTOTP = true
-                }
             }
         }
     }
@@ -196,6 +185,84 @@ struct ServerListView: View {
             get: { appState.lastError != nil && appState.connectionState == .disconnected },
             set: { if !$0 { appState.lastError = nil } }
         )
+    }
+}
+
+private struct TFAChallengeView: View {
+    @EnvironmentObject private var appState: AppState
+    let challenge: TFAChallengeState
+    @State private var method: TFAMethod = .totp
+    @State private var response = ""
+    @State private var working = false
+    @State private var error: String?
+
+    private var methods: [TFAMethod] { challenge.info?.availableMethods ?? [.totp] }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Authentication Method", selection: $method) {
+                        ForEach(methods) { Text($0.label).tag($0) }
+                    }
+                }
+                Section {
+                    if method == .webauthn {
+                        Button {
+                            Task { await useWebAuthn() }
+                        } label: {
+                            Label("Use Passkey / WebAuthn", systemImage: "person.badge.key.fill")
+                        }
+                    } else {
+                        SecureField(prompt, text: $response)
+                            .keyboardType(method == .totp ? .numberPad : .default)
+                        if method == .recovery, let ids = challenge.info?.recovery {
+                            Text("Available recovery code IDs: \(ids.joined(separator: ", "))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if method == .yubico {
+                            Text("Touch the hardware key, then paste or type its one-time password.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if let error { Text(error).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle("Two-Factor Authentication")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { appState.cancelPendingTFA() } }
+                if method != .webauthn {
+                    ToolbarItem(placement: .confirmationAction) { Button("Submit") { Task { await submit() } }.disabled(response.trimmed.isEmpty || working) }
+                }
+            }
+            .overlay { if working { ProgressView() } }
+            .onAppear { method = methods.first ?? .totp }
+        }
+        .interactiveDismissDisabled()
+    }
+
+    private var prompt: String {
+        switch method {
+        case .totp: return String(localized: "TOTP Code")
+        case .yubico: return String(localized: "Hardware Key OTP")
+        case .recovery: return String(localized: "Recovery Code")
+        case .webauthn: return ""
+        }
+    }
+
+    @MainActor private func submit() async {
+        working = true; defer { working = false }
+        await appState.submitSecondFactor(method: method, response: response)
+    }
+
+    @MainActor private func useWebAuthn() async {
+        guard let webauthn = challenge.info?.webauthn else { return }
+        working = true; error = nil; defer { working = false }
+        do {
+            let assertion = try await WebAuthnSession.authenticate(webauthn, fallbackRPID: appState.connectedServer?.host ?? "")
+            await appState.submitSecondFactor(method: .webauthn, response: assertion)
+        } catch { self.error = error.localizedDescription }
     }
 }
 

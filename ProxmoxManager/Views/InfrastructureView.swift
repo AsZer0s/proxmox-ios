@@ -13,6 +13,7 @@ struct InfrastructureView: View {
                 }
             }
             Section("Cluster Infrastructure") {
+                NavigationLink { AdvancedClusterView() } label: { Label("Advanced Cluster", systemImage: "point.3.filled.connected.trianglepath.dotted") }
                 NavigationLink { NodeNetworkConfigurationView(node: node) } label: { Label("Node Network", systemImage: "cable.connector.horizontal") }.disabled(node.isEmpty)
                 NavigationLink { StorageConfigurationView() } label: { Label("Storage Configuration", systemImage: "externaldrive.connected.to.line.below") }
                 NavigationLink { CephManagementView(node: node) } label: { Label("Ceph", systemImage: "square.3.layers.3d") }.disabled(node.isEmpty)
@@ -59,7 +60,7 @@ private struct NodeNetworkConfigurationView: View {
     }
     private var canModify: Bool { appState.hasPrivilege("Sys.Modify", on: "/nodes/\(node)") }
     @MainActor private func load() async { guard let service = appState.service else { return }; loading = true; defer { loading = false }; do { interfaces = try await service.fetchNodeNetworkInterfaces(node: node) } catch { self.error = error.localizedDescription } }
-    @MainActor private func apply() async { guard let service = appState.service else { return }; working = true; defer { working = false }; do { try await service.applyNodeNetworkConfiguration(node: node); await load() } catch { self.error = error.localizedDescription } }
+    @MainActor private func apply() async { guard let service = appState.service, await appState.operationSafety.authorizeCriticalAction(reason: String(localized: "Authorize applying node network configuration")) else { return }; working = true; defer { working = false }; do { try await service.applyNodeNetworkConfiguration(node: node); await load() } catch { self.error = error.localizedDescription } }
     @MainActor private func revert() async { guard let service = appState.service else { return }; working = true; defer { working = false }; do { try await service.revertNodeNetworkConfiguration(node: node); await load() } catch { self.error = error.localizedDescription } }
 }
 

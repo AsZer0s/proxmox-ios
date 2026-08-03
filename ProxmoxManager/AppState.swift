@@ -18,6 +18,7 @@ struct CertificateConfirmation: Identifiable {
 struct TFAChallengeState: Identifiable {
     let id = UUID()
     let serverID: UUID
+    let info: TFAChallengeInfo?
 }
 
 @MainActor
@@ -33,6 +34,9 @@ final class AppState: ObservableObject {
     @Published var appLocked = true
     @Published var taskCenter = ProxmoxTaskCenter()
     @Published var alertCenter = ProxmoxAlertCenter()
+    @Published var remoteNotifications = RemoteNotificationManager()
+    @Published var operationSafety = OperationSafetyCenter()
+    @Published var dashboard = DashboardCenter()
     private var authenticationObserver: NSObjectProtocol?
     /// Cancels an in-flight connection when a new one is started.
     private var connectionTask: Task<Void, Never>?
@@ -186,6 +190,7 @@ final class AppState: ObservableObject {
                     service: service
                 )
                 await self.alertCenter.activate(serverID: server.id, service: service)
+                self.operationSafety.activate(serverID: server.id, service: service)
             } catch let error as ProxmoxError {
                 guard !Task.isCancelled else { return }
                 self.connectionState = .disconnected
@@ -200,7 +205,8 @@ final class AppState: ObservableObject {
                     self.service = service
                     self.connectedServer = server
                     self.pendingTFAChallenge = TFAChallengeState(
-                        serverID: server.id
+                        serverID: server.id,
+                        info: await service.pendingTFAInfo()
                     )
                 default:
                     self.lastError = error.localizedDescription
@@ -217,10 +223,14 @@ final class AppState: ObservableObject {
 
     /// Complete a TOTP challenge during login.
     func submitTOTP(code: String) async {
+        await submitSecondFactor(method: .totp, response: code)
+    }
+
+    func submitSecondFactor(method: TFAMethod, response: String) async {
         guard let service = service, pendingTFAChallenge != nil else { return }
         pendingTFAChallenge = nil
         do {
-            try await service.authenticateTOTP(code: code)
+            try await service.authenticateSecondFactor(method: method, response: response)
             self.connectionState = .connected
             self.permissions = try? await service.fetchPermissions()
             let nodes = (try? await service.fetchNodes())?.map(\.node) ?? []
@@ -231,6 +241,7 @@ final class AppState: ObservableObject {
                     service: service
                 )
                 await alertCenter.activate(serverID: serverID, service: service)
+                operationSafety.activate(serverID: serverID, service: service)
             }
         } catch {
             self.lastError = error.localizedDescription
@@ -277,5 +288,6 @@ final class AppState: ObservableObject {
         permissions = nil
         taskCenter.deactivate()
         alertCenter.deactivate()
+        operationSafety.deactivate()
     }
 }

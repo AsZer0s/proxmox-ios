@@ -19,6 +19,16 @@ struct OperationsView: View {
                             badge: alertCenter.alerts.filter { !$0.acknowledged }.count
                         )
                     }
+                    NavigationLink {
+                        PBSManagementView()
+                    } label: {
+                        operationLabel(
+                            title: String(localized: "Backup Server"),
+                            subtitle: String(localized: "Datastores, snapshots, garbage collection, verify, prune, and sync jobs"),
+                            icon: "externaldrive.badge.timemachine",
+                            color: .indigo
+                        )
+                    }
                 }
 
                 Section("Cluster") {
@@ -45,6 +55,16 @@ struct OperationsView: View {
                 }
 
                 Section("Security") {
+                    NavigationLink {
+                        OperationSafetyView(center: appState.operationSafety)
+                    } label: {
+                        operationLabel(
+                            title: String(localized: "Operation Safety"),
+                            subtitle: String(localized: "Change previews, impact levels, audit, retries, and maintenance windows"),
+                            icon: "lock.shield",
+                            color: .red
+                        )
+                    }
                     NavigationLink {
                         AccessControlView()
                     } label: {
@@ -201,6 +221,8 @@ struct AlertSettingsView: View {
     @State private var cpu = 0.90
     @State private var memory = 0.90
     @State private var storage = 0.85
+    @State private var relayURL = ""
+    @State private var enrollmentToken = ""
 
     var body: some View {
         NavigationStack {
@@ -222,6 +244,46 @@ struct AlertSettingsView: View {
                     thresholdRow("Memory", value: $memory)
                     thresholdRow("Storage", value: $storage)
                 }
+
+                Section {
+                    TextField("Relay URL", text: $relayURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    SecureField("Enrollment Token", text: $enrollmentToken)
+                    LabeledContent("Status", value: appState.remoteNotifications.registrationState)
+                    Button("Enable Background Alerts") {
+                        saveRelay()
+                        Task { await appState.remoteNotifications.sync(servers: appState.servers) }
+                    }
+                    .disabled(relayURL.trimmed.isEmpty || enrollmentToken.isEmpty)
+                    if let error = appState.remoteNotifications.lastError {
+                        Text(error).font(.caption).foregroundStyle(.red)
+                    }
+                } header: {
+                    Text("Background Alerts")
+                } footer: {
+                    Text("A self-hosted relay polls Proxmox and sends APNs notifications even when this app is closed. Proxmox credentials are never uploaded by the app.")
+                }
+
+                Section("Alert Rules") {
+                    ForEach($appState.remoteNotifications.rules) { $rule in
+                        NavigationLink {
+                            AlertRuleEditor(rule: $rule)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(rule.kind.label)
+                                    Text(rule.resourcePattern)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if !rule.enabled { Text("Off").foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                }
             }
             .navigationTitle("Alert Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -239,6 +301,8 @@ struct AlertSettingsView: View {
                 cpu = center.cpuThreshold
                 memory = center.memoryThreshold
                 storage = center.storageThreshold
+                relayURL = appState.remoteNotifications.relayURL
+                enrollmentToken = appState.remoteNotifications.enrollmentToken
             }
         }
     }
@@ -263,5 +327,51 @@ struct AlertSettingsView: View {
         center.storageThreshold = storage
         Task { await center.restartMonitoring() }
         dismiss()
+    }
+
+    private func saveRelay() {
+        appState.remoteNotifications.relayURL = relayURL
+        appState.remoteNotifications.enrollmentToken = enrollmentToken
+    }
+}
+
+private struct AlertRuleEditor: View {
+    @EnvironmentObject private var appState: AppState
+    @Binding var rule: AlertRule
+
+    var body: some View {
+        Form {
+            Toggle("Enabled", isOn: $rule.enabled)
+            TextField("Resource Pattern", text: $rule.resourcePattern)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if rule.threshold != nil {
+                VStack(alignment: .leading) {
+                    LabeledContent("Threshold", value: (rule.threshold ?? 0).formatted(.percent.precision(.fractionLength(2))))
+                    Slider(
+                        value: Binding(get: { rule.threshold ?? 0.9 }, set: { rule.threshold = $0 }),
+                        in: 0.5...0.99,
+                        step: 0.01
+                    )
+                }
+            }
+            Stepper("Cooldown: \(rule.cooldownMinutes) min", value: $rule.cooldownMinutes, in: 1...1440)
+            Section("Clusters") {
+                Toggle("All Clusters", isOn: Binding(
+                    get: { rule.serverIDs.isEmpty },
+                    set: { if $0 { rule.serverIDs = [] } else if let first = appState.servers.first { rule.serverIDs = [first.id] } }
+                ))
+                if !rule.serverIDs.isEmpty {
+                    ForEach(appState.servers) { server in
+                        Toggle(server.name, isOn: Binding(
+                            get: { rule.serverIDs.contains(server.id) },
+                            set: { enabled in if enabled { rule.serverIDs.append(server.id) } else { rule.serverIDs.removeAll { $0 == server.id } } }
+                        ))
+                    }
+                }
+            }
+        }
+        .navigationTitle(rule.kind.label)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

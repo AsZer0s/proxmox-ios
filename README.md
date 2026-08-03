@@ -41,29 +41,32 @@ Whether you are checking cluster health, responding to an unavailable guest, or 
 | **Performance charts** | Explore CPU, memory, network, and disk history for nodes and guests across hourly, daily, and weekly ranges. |
 | **Task center** | Browse persistent server task history across nodes, inspect results and logs, and cancel running tasks. |
 | **Node maintenance** | Control node services, refresh package indexes, review available updates, and safely reboot or shut down nodes. |
-| **Alerts and notifications** | Detect offline nodes, high CPU or memory pressure, failed backups, and low storage, with configurable local notifications. |
-| **HA and replication** | Inspect HA state and manage HA resources, migration groups, and replication jobs. |
+| **Alerts and notifications** | Detect offline nodes, resource pressure, failed backups, and low storage. Use local alerts or the optional self-hosted APNs relay with per-cluster/resource rules, thresholds, and cooldowns. |
+| **Proxmox Backup Server** | Connect directly to PBS, inspect datastore capacity, groups and snapshots, run GC and verification, and manage prune, verify, and sync jobs. |
+| **HA and replication** | Inspect HA state and manage HA resources, migration groups, modern node/resource affinity rules, and replication jobs. |
 | **Users and permissions** | Manage users, roles, ACL entries, and API Tokens, including one-time token secret handling. |
-| **Cluster infrastructure** | Configure node networking, cluster storage, Ceph pools and health, and SDN zones, VNets, and subnets. |
+| **Cluster infrastructure** | Manage quorum and membership, node networking, storage, Ceph pools/OSD/MON/MGR, and SDN zones, VNets, subnets, controllers, IPAM, and DNS. |
 | **Batch operations** | Select multiple VMs and containers to start, shut down, force-stop, migrate, or back up together. |
+| **Operation safety** | Review change parameters and impact, authorize critical schedules with device-owner authentication, keep an audit trail, retry operations, and define maintenance windows. |
+| **Personal workspace** | Favorites, reorderable dashboard sections, multi-cluster overview, a favorite-guest widget, and Siri/Shortcuts actions. |
 
 ## Secure by design
 
-- Password, API Token, and TOTP authentication
+- Password and API Token authentication, plus TOTP, WebAuthn/passkeys, YubiKey OTP, and recovery codes
 - Passwords, token secrets, and certificate fingerprints stored in iOS Keychain
 - Support for certificates issued by trusted certificate authorities
 - Explicit SHA-256 fingerprint confirmation for self-signed certificates
 - Automatic rejection when a pinned certificate changes
 - Optional Face ID lock with an automatic privacy cover in the background
 - Automatic reauthentication when a password-based session expires
-- Direct device-to-server connections with no cloud relay
+- Direct device-to-server connections by default; the optional background-alert relay is self-hosted and never receives credentials from the app
 
 ## A native mobile experience
 
 - SwiftUI interface designed for iPhone and iPad
 - English and Simplified Chinese localization
 - Foreground auto-refresh and pull-to-refresh
-- Configurable in-app monitoring every minute while the app is active
+- Configurable in-app monitoring while active, or real background APNs alerts through `AlertRelay/`
 - Permission-aware controls based on the connected Proxmox account
 - Clear confirmation for force stop, deletion, snapshot rollback, and other high-risk operations
 - Dark Mode, Dynamic Type, and familiar system interactions
@@ -71,7 +74,8 @@ Whether you are checking cluster health, responding to an unavailable guest, or 
 ## Compatibility
 
 - iOS / iPadOS 16.0 or later
-- Proxmox VE 6.0 or later
+- Proxmox VE 6.0 or later; modern HA rules require a current PVE release
+- Proxmox Backup Server for PBS management
 - Single-node installations and multi-node clusters
 - Password or API Token authentication
 
@@ -79,7 +83,11 @@ Some management features require the corresponding Proxmox VE privileges. When a
 
 ## Privacy
 
-Proxmox Manager contains no advertising or user tracking and does not collect personal data. Server details and credentials remain on your device, while operational data is retrieved directly from the Proxmox VE servers you configure.
+Proxmox Manager contains no advertising or user tracking and does not collect personal data. Server details and credentials remain on your device. If you enable the optional self-hosted alert relay, the app sends it only the APNs device token, selected cluster UUIDs, and alert rules; PVE credentials are configured independently on the relay.
+
+## Background alert relay
+
+See [`AlertRelay/README.md`](AlertRelay/README.md) for the Docker deployment, APNs key setup, dedicated read-only PVE API Token, and HTTPS requirements.
 
 ## Disclaimer
 

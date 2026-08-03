@@ -7,9 +7,9 @@ struct MainDashboardView: View {
 
     var body: some View {
         TabView {
-            NodesView()
+            CustomDashboardView(dashboard: appState.dashboard)
                 .tabItem {
-                    Label("Nodes", systemImage: "server.rack")
+                    Label("Overview", systemImage: "rectangle.3.group")
                 }
 
             VMListView()

@@ -2,6 +2,51 @@ import XCTest
 @testable import ProxmoxManager
 
 final class ProxmoxManagerTests: XCTestCase {
+    func testModernTFAChallengeParsesAvailableMethods() throws {
+        let challenge = #"{"totp":true,"yubico":true,"recovery":["1","2"],"webauthn":{"publicKey":{"challenge":"YWJj","rpId":"pve.example.com","allowCredentials":[]}}}"#
+        let encoded = challenge.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        let payload = ProxmoxTicketPayload(
+            ticket: "PVE:!tfa!\(encoded)::signature",
+            csrfToken: "csrf",
+            username: "root@pam"
+        )
+
+        XCTAssertTrue(payload.requiresTFA)
+        XCTAssertEqual(payload.tfaChallenge?.availableMethods, [.webauthn, .totp, .yubico, .recovery])
+        XCTAssertEqual(payload.tfaChallenge?.webauthn?.publicKey.rpId, "pve.example.com")
+    }
+
+    func testRecoveryAndWebAuthnSecondFactorFormsAreEncoded() {
+        let recovery = ProxmoxAPIService.secondFactorFormBody(
+            username: "root@pam",
+            method: .recovery,
+            response: "abcd-efgh",
+            challengeTicket: "PVE:!tfa!challenge"
+        )
+        XCTAssertTrue(recovery.contains("password=recovery%3Aabcd-efgh"))
+
+        let webauthn = ProxmoxAPIService.secondFactorFormBody(
+            username: "root@pam",
+            method: .webauthn,
+            response: #"{"id":"key"}"#,
+            challengeTicket: "ticket"
+        )
+        XCTAssertTrue(webauthn.contains("password=webauthn%3A"))
+        XCTAssertTrue(webauthn.contains("%7B%22id%22%3A%22key%22%7D"))
+    }
+
+    func testPBSServerUsesDedicatedAPIPort() {
+        let server = PBSServer(name: "PBS", host: "backup.example.com")
+        XCTAssertEqual(server.baseURL, "https://backup.example.com:8007/api2/json")
+        XCTAssertEqual(server.authMethod, .token)
+    }
+
+    func testAlertRulesProvideAllCriticalDefaults() {
+        XCTAssertEqual(Set(AlertRule.defaults.map(\.kind)), Set(AlertRule.Kind.allCases))
+        XCTAssertEqual(AlertRule.defaults.first(where: { $0.kind == .cpu })?.threshold, 0.90)
+        XCTAssertTrue(AlertRule.defaults.allSatisfy(\.enabled))
+    }
+
     // MARK: - Server defaults
 
     func testServerDefaultsToSecureCertificateValidation() {

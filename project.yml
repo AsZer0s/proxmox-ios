@@ -46,6 +46,12 @@ targets:
           UIApplicationSupportsMultipleScenes: true
         NSLocalNetworkUsageDescription: "Proxmox Manager connects directly to Proxmox servers on your local network."
         NSFaceIDUsageDescription: "Use Face ID to protect access to your saved Proxmox servers."
+        CFBundleURLTypes:
+          - CFBundleURLName: com.aszer0s.proxmoxmanager
+            CFBundleURLSchemes:
+              - proxmoxmanager
+        UIBackgroundModes:
+          - remote-notification
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aszer0s.proxmoxmanager
@@ -53,6 +59,29 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_ENTITLEMENTS: ProxmoxManager/ProxmoxManager.entitlements
+    dependencies:
+      - target: ProxmoxWidget
+
+  ProxmoxWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: ProxmoxWidget
+    info:
+      path: ProxmoxWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Proxmox Favorites
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aszer0s.proxmoxmanager.widget
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: ProxmoxWidget/ProxmoxWidget.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
 
   ProxmoxManagerTests:
     type: bundle.unit-test
@@ -75,6 +104,7 @@ schemes:
       targets:
         ProxmoxManager: all
         ProxmoxManagerTests: [test]
+        ProxmoxWidget: all
     test:
       targets:
         - name: ProxmoxManagerTests

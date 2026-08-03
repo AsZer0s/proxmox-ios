@@ -36,6 +36,35 @@ enum KeychainHelper {
     }
 
     @discardableResult
+    static func saveGenericSecret(_ secret: String, account: String) -> Bool {
+        guard let data = secret.data(using: .utf8) else { return false }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+        var attributes = query
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        attributes[kSecValueData as String] = data
+        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+    }
+
+    static func genericSecret(account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    @discardableResult
     static func saveSecret(_ secret: String, authMethod: AuthMethod, for serverID: UUID) -> Bool {
         let account = self.account(for: serverID, suffix: authMethod == .token ? "token" : "password")
         guard let data = secret.data(using: .utf8) else { return false }

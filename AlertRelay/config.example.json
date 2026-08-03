@@ -1,0 +1,20 @@
+{
+  "enrollmentToken": "replace-with-a-long-random-value",
+  "pollSeconds": 60,
+  "apns": {
+    "teamId": "APPLE_TEAM_ID",
+    "keyId": "APNS_KEY_ID",
+    "privateKeyPath": "/data/AuthKey_KEYID.p8",
+    "bundleId": "com.aszer0s.proxmoxmanager"
+  },
+  "clusters": [
+    {
+      "id": "COPY-IOS-SERVER-UUID-HERE",
+      "name": "Home Lab",
+      "baseUrl": "https://pve.example.com:8006/api2/json",
+      "tokenId": "monitor@pve!relay",
+      "tokenSecret": "PVEAPITOKEN-SECRET",
+      "allowInsecureTLS": false
+    }
+  ]
+}

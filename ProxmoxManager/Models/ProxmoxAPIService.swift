@@ -166,6 +166,7 @@ actor ProxmoxAPIService {
     private var csrfToken: String?
     private var tokenValue: String?
     private var tfaChallengeTicket: String?
+    private var tfaChallengeInfo: TFAChallengeInfo?
     /// Stored password for transparent 401 retries.
     private var storedPassword: String?
 
@@ -226,6 +227,7 @@ actor ProxmoxAPIService {
 
         if decoded.data.requiresTFA {
             self.tfaChallengeTicket = decoded.data.ticket
+            self.tfaChallengeInfo = decoded.data.tfaChallenge
             throw ProxmoxError.tfaRequired
         }
 
@@ -239,17 +241,24 @@ actor ProxmoxAPIService {
 
     /// Complete a TOTP challenge. Call this after receiving `.tfaRequired`.
     func authenticateTOTP(code: String) async throws {
+        try await authenticateSecondFactor(method: .totp, response: code)
+    }
+
+    func pendingTFAInfo() -> TFAChallengeInfo? { tfaChallengeInfo }
+
+    func authenticateSecondFactor(method: TFAMethod, response: String) async throws {
         guard let challengeTicket = tfaChallengeTicket else {
             throw ProxmoxError.authenticationFailed("No pending TFA challenge.")
         }
-        let trimmedCode = code.trimmed
+        let trimmedCode = response.trimmed
         guard !trimmedCode.isEmpty else {
-            throw ProxmoxError.authenticationFailed("Enter a TOTP code.")
+            throw ProxmoxError.authenticationFailed("Enter a second factor response.")
         }
 
-        let body = Self.totpFormBody(
+        let body = Self.secondFactorFormBody(
             username: server.fullUsername,
-            code: trimmedCode,
+            method: method,
+            response: trimmedCode,
             challengeTicket: challengeTicket
         )
 
@@ -260,7 +269,7 @@ actor ProxmoxAPIService {
 
         guard http.statusCode == 200 else {
             throw ProxmoxError.authenticationFailed(
-                http.statusCode == 401 ? "Invalid TOTP code" : "TFA authentication failed (HTTP \(http.statusCode))."
+                http.statusCode == 401 ? "Invalid second factor" : "TFA authentication failed (HTTP \(http.statusCode))."
             )
         }
 
@@ -272,6 +281,7 @@ actor ProxmoxAPIService {
             self.ticket = decoded.data.ticket
             self.csrfToken = decoded.data.csrfToken
             self.tfaChallengeTicket = nil
+            self.tfaChallengeInfo = nil
         } catch let error as ProxmoxError {
             throw error
         } catch {
@@ -284,9 +294,13 @@ actor ProxmoxAPIService {
         code: String,
         challengeTicket: String
     ) -> String {
+        secondFactorFormBody(username: username, method: .totp, response: code, challengeTicket: challengeTicket)
+    }
+
+    static func secondFactorFormBody(username: String, method: TFAMethod, response: String, challengeTicket: String) -> String {
         [
             "username=\(username.formURLEncoded)",
-            "password=\("totp:\(code)".formURLEncoded)",
+            "password=\("\(method.rawValue):\(response)".formURLEncoded)",
             "tfa-challenge=\(challengeTicket.formURLEncoded)",
             "new-format=1",
         ].joined(separator: "&")
@@ -320,6 +334,7 @@ actor ProxmoxAPIService {
         ticket = nil
         csrfToken = nil
         tfaChallengeTicket = nil
+        tfaChallengeInfo = nil
     }
 
     // MARK: Reads
@@ -830,6 +845,81 @@ actor ProxmoxAPIService {
     func deleteCephPool(node: String, name: String) async throws {
         _ = try await delete("/nodes/\(node)/ceph/pool/\(name.pathEscaped)")
     }
+
+    func fetchCephOSDs(node: String) async throws -> ProxmoxCephOSDResponse {
+        try await get("/nodes/\(node)/ceph/osd", as: ProxmoxCephOSDResponse.self)
+    }
+
+    func createCephOSD(node: String, form: [String: String]) async throws -> String {
+        try await post("/nodes/\(node)/ceph/osd", form: form)
+    }
+
+    func setCephOSDState(node: String, osd: Int, state: String) async throws -> String {
+        try await post("/nodes/\(node)/ceph/osd/\(osd)/\(state)", form: [:])
+    }
+
+    func scrubCephOSD(node: String, osd: Int, deep: Bool = false) async throws -> String {
+        try await post("/nodes/\(node)/ceph/osd/\(osd)/scrub", form: ["deep": deep ? "1" : "0"])
+    }
+
+    func destroyCephOSD(node: String, osd: Int, cleanup: Bool) async throws -> String {
+        try await delete("/nodes/\(node)/ceph/osd/\(osd)", form: ["cleanup": cleanup ? "1" : "0"])
+    }
+
+    func fetchCephMONs(node: String) async throws -> [ProxmoxCephDaemon] {
+        try await get("/nodes/\(node)/ceph/mon", as: [ProxmoxCephDaemon].self)
+    }
+
+    func fetchCephMGRs(node: String) async throws -> [ProxmoxCephDaemon] {
+        try await get("/nodes/\(node)/ceph/mgr", as: [ProxmoxCephDaemon].self)
+    }
+
+    func createCephDaemon(node: String, kind: String, id: String) async throws -> String {
+        try await post("/nodes/\(node)/ceph/\(kind)/\(id.pathEscaped)", form: [:])
+    }
+
+    func deleteCephDaemon(node: String, kind: String, id: String) async throws -> String {
+        try await delete("/nodes/\(node)/ceph/\(kind)/\(id.pathEscaped)")
+    }
+
+    func fetchHARules() async throws -> [ProxmoxHARule] {
+        let summaries = try await get("/cluster/ha/rules", as: [ProxmoxHARule].self)
+        var result: [ProxmoxHARule] = []
+        for item in summaries {
+            result.append((try? await get("/cluster/ha/rules/\(item.rule.pathEscaped)", as: ProxmoxHARule.self)) ?? item)
+        }
+        return result.sorted { $0.rule < $1.rule }
+    }
+
+    func createHARule(form: [String: String]) async throws { _ = try await post("/cluster/ha/rules", form: form) }
+    func updateHARule(id: String, form: [String: String]) async throws { _ = try await put("/cluster/ha/rules/\(id.pathEscaped)", form: form) }
+    func deleteHARule(id: String) async throws { _ = try await delete("/cluster/ha/rules/\(id.pathEscaped)") }
+
+    func fetchClusterStatus() async throws -> [ProxmoxClusterStatusEntry] {
+        try await get("/cluster/status", as: [ProxmoxClusterStatusEntry].self)
+    }
+
+    func createCluster(name: String, link0: String) async throws {
+        _ = try await post("/cluster/config", form: ["clustername": name, "link0": link0])
+    }
+
+    func joinCluster(hostname: String, fingerprint: String, password: String, link0: String) async throws -> String {
+        var form = ["hostname": hostname, "fingerprint": fingerprint, "password": password]
+        if !link0.trimmed.isEmpty { form["link0"] = link0.trimmed }
+        return try await post("/cluster/config/join", form: form)
+    }
+
+    func removeClusterNode(name: String) async throws {
+        _ = try await delete("/cluster/config/nodes/\(name.pathEscaped)")
+    }
+
+    func fetchSDNPlugins(kind: String) async throws -> [ProxmoxSDNPlugin] {
+        try await get("/cluster/sdn/\(kind)", as: [ProxmoxSDNPlugin].self)
+    }
+
+    func createSDNPlugin(kind: String, form: [String: String]) async throws { _ = try await post("/cluster/sdn/\(kind)", form: form) }
+    func updateSDNPlugin(kind: String, id: String, form: [String: String]) async throws { _ = try await put("/cluster/sdn/\(kind)/\(id.pathEscaped)", form: form) }
+    func deleteSDNPlugin(kind: String, id: String) async throws { _ = try await delete("/cluster/sdn/\(kind)/\(id.pathEscaped)") }
 
     func fetchSDNZones() async throws -> [ProxmoxSDNZone] {
         try await get("/cluster/sdn/zones", as: [ProxmoxSDNZone].self)
@@ -1547,6 +1637,7 @@ actor ProxmoxAPIService {
         }
 
         let (data, _) = try await performAuthenticatedRequest(request)
+        auditMutation(method: "POST", path: path, form: form)
         return Self.mutationResult(from: data)
     }
 
@@ -1569,6 +1660,7 @@ actor ProxmoxAPIService {
         request.httpBody = Self.formBody(form)
 
         let (data, _) = try await performAuthenticatedRequest(request)
+        auditMutation(method: "POST", path: path, form: form)
         do {
             return try JSONDecoder().decode(ProxmoxResponse<T>.self, from: data).data
         } catch {
@@ -1588,6 +1680,7 @@ actor ProxmoxAPIService {
         request.httpBody = Self.formBody(form)
 
         let (data, _) = try await performAuthenticatedRequest(request)
+        auditMutation(method: "PUT", path: path, form: form)
         return Self.mutationResult(from: data)
     }
 
@@ -1605,7 +1698,21 @@ actor ProxmoxAPIService {
         }
 
         let (data, _) = try await performAuthenticatedRequest(request)
+        auditMutation(method: "DELETE", path: path, form: form)
         return Self.mutationResult(from: data)
+    }
+
+    private func auditMutation(method: String, path: String, form: [String: String]) {
+        let sensitive = ["password", "token", "secret", "key", "tfa-challenge"]
+        let safe = form.mapValues { value in value.isEmpty ? "" : value }
+            .mapValues { $0 }
+        var redacted = safe
+        for key in redacted.keys where sensitive.contains(where: { key.lowercased().contains($0) }) {
+            redacted[key] = "••••"
+        }
+        NotificationCenter.default.post(name: .proxmoxMutationCompleted, object: nil, userInfo: [
+            "serverID": server.id, "method": method, "path": path, "changes": redacted,
+        ])
     }
 
     static func formBody(_ form: [String: String]) -> Data? {

@@ -132,6 +132,61 @@ struct ProxmoxTicketPayload: Codable {
     var requiresTFA: Bool {
         ticket.contains(":!tfa!")
     }
+
+    var tfaChallenge: TFAChallengeInfo? {
+        guard ticket.hasPrefix("PVE:!tfa!"), let encoded = ticket.split(separator: ":", omittingEmptySubsequences: false).dropFirst().first else { return nil }
+        let value = String(encoded).dropFirst("!tfa!".count)
+        guard let json = String(value).removingPercentEncoding?.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(TFAChallengeInfo.self, from: json)
+    }
+}
+
+struct TFAChallengeInfo: Codable, Hashable {
+    let totp: Bool?
+    let yubico: Bool?
+    let recovery: [String]?
+    let webauthn: WebAuthnChallenge?
+    let u2f: JSONDiscard?
+
+    var availableMethods: [TFAMethod] {
+        var result: [TFAMethod] = []
+        if webauthn != nil { result.append(.webauthn) }
+        if totp == true { result.append(.totp) }
+        if yubico == true { result.append(.yubico) }
+        if recovery != nil { result.append(.recovery) }
+        return result.isEmpty ? [.totp] : result
+    }
+}
+
+enum TFAMethod: String, Codable, CaseIterable, Identifiable, Hashable {
+    case webauthn, totp, yubico, recovery
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .webauthn: return String(localized: "Passkey / WebAuthn")
+        case .totp: return "TOTP"
+        case .yubico: return String(localized: "Hardware Security Key")
+        case .recovery: return String(localized: "Recovery Code")
+        }
+    }
+}
+
+struct WebAuthnChallenge: Codable, Hashable {
+    let publicKey: WebAuthnPublicKey
+    let string: String?
+}
+
+struct WebAuthnPublicKey: Codable, Hashable {
+    struct Credential: Codable, Hashable { let id: String; let type: String? }
+    let challenge: String
+    let rpId: String?
+    let allowCredentials: [Credential]?
+    let userVerification: String?
+}
+
+struct JSONDiscard: Codable, Hashable {
+    init(from decoder: Decoder) throws { _ = try? decoder.singleValueContainer().decode(Bool.self) }
+    func encode(to encoder: Encoder) throws { var c=encoder.singleValueContainer(); try c.encode(true) }
 }
 
 /// Generic Proxmox response envelope. Every endpoint wraps its payload in `data`.

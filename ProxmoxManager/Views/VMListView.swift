@@ -79,6 +79,18 @@ struct VMListView: View {
                                             } label: {
                                                 GuestRow(guest: guest)
                                             }
+                                            .contextMenu {
+                                                if let serverID = appState.connectedServer?.id {
+                                                    Button {
+                                                        appState.dashboard.toggle(serverID: serverID, guest: guest)
+                                                    } label: {
+                                                        Label(
+                                                            appState.dashboard.isFavorite(serverID: serverID, guest: guest) ? "Remove Favorite" : "Add Favorite",
+                                                            systemImage: appState.dashboard.isFavorite(serverID: serverID, guest: guest) ? "star.slash" : "star"
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
