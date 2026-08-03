@@ -58,6 +58,7 @@ struct ManagedProxmoxTask: Identifiable, Codable {
     }
 
     init(serverTask: ProxmoxNodeTask) {
+        id = UUID()
         upid = serverTask.upid
         node = serverTask.node
         title = Self.title(for: serverTask.taskType)
