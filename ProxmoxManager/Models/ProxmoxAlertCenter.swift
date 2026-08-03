@@ -197,7 +197,7 @@ final class ProxmoxAlertCenter: NSObject, ObservableObject, UNUserNotificationCe
     }
 
     func clearAcknowledged() {
-        alerts.removeAll(\.acknowledged)
+        alerts.removeAll(where: \.acknowledged)
         persist()
     }
 

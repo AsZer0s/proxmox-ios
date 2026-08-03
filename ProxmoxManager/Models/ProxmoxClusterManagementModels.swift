@@ -143,7 +143,7 @@ struct ProxmoxReplicationJob: Decodable, Identifiable, Hashable {
         comment = try container.decodeIfPresent(String.self, forKey: .comment)
         disabled = container.decodeFlexibleBool(forKey: .disabled) ?? false
         removeJob = (try? container.decodeIfPresent(String.self, forKey: .removeJob)) ??
-            container.decodeFlexibleInt(forKey: .removeJob).map(String.init)
+            container.decodeFlexibleInt(forKey: .removeJob).map { String($0) }
     }
 }
 
@@ -421,8 +421,11 @@ struct ProxmoxCephPool: Decodable, Identifiable, Hashable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        name = (try? container.decode(String.self, forKey: .name)) ??
-            (try container.decode(String.self, forKey: .poolName))
+        if let decodedName = try? container.decode(String.self, forKey: .name) {
+            name = decodedName
+        } else {
+            name = try container.decode(String.self, forKey: .poolName)
+        }
         size = container.decodeFlexibleInt(forKey: .size)
         minSize = container.decodeFlexibleInt(forKey: .minSize)
         pgNum = container.decodeFlexibleInt(forKey: .pgNum)
