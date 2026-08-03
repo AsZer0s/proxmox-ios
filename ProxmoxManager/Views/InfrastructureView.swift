@@ -177,12 +177,100 @@ private struct StorageConfigEditor: View {
     @MainActor private func remove() async { guard let service = appState.service, let item else { return }; working = true; defer { working = false }; do { try await service.deleteStorageConfig(id: item.storage); await onSaved(); dismiss() } catch { self.error = error.localizedDescription } }
 }
 
-private struct CephManagementView:View{
-    @EnvironmentObject private var appState:AppState;let node:String
-    @State private var status:ProxmoxCephStatus?;@State private var pools:[ProxmoxCephPool]=[];@State private var editing:ProxmoxCephPool?;@State private var creating=false;@State private var loading=true;@State private var error:String?
-    var body:some View{List{Section("Health"){LabeledContent("Status",value:status?.health?.status ?? "—");if let pg=status?.pgmap{if let used=pg.bytesUsed{LabeledContent("Used",value:ByteCountFormatter.string(fromByteCount:used,countStyle:.binary))};if let available=pg.bytesAvailable{LabeledContent("Available",value:ByteCountFormatter.string(fromByteCount:available,countStyle:.binary))};if let count=pg.totalPGs{LabeledContent("Placement Groups",value:"\(count)")}}};Section("Pools"){ForEach(pools){pool in Button{editing=pool}label:{HStack{VStack(alignment:.leading){Text(pool.name).foregroundStyle(.primary);Text("size \(pool.size ?? 0) · PG \(pool.pgNum ?? 0)").font(.caption).foregroundStyle(.secondary)};Spacer();if let used=pool.percentUsed{Text(used.formatted(.percent.precision(.fractionLength(2)))).font(.caption.monospacedDigit())}}}.disabled(!canModify)}};if let error{Section{Text(error).foregroundStyle(.red)}}}.navigationTitle("Ceph · \(node)").toolbar{ToolbarItem(placement:.navigationBarTrailing){Button{creating=true}label:{Image(systemName:"plus")}.disabled(!canModify)}}.overlay{if loading{ProgressView()}}.task{await load()}.refreshable{await load()}.sheet(isPresented:$creating){CephPoolEditor(node:node,pool:nil){await load()}}.sheet(item:$editing){CephPoolEditor(node:node,pool:$0){await load()}}}
-    private var canModify:Bool{appState.hasPrivilege("Sys.Modify",on:"/nodes/\(node)")}
-    @MainActor private func load()async{guard let service=appState.service else{return};loading=true;defer{loading=false};do{async let a=service.fetchCephStatus(node:node);async let b=service.fetchCephPools(node:node);(status,pools)=try await(a,b)}catch{self.error=error.localizedDescription}}
+private struct CephManagementView: View {
+    @EnvironmentObject private var appState: AppState
+    let node: String
+    @State private var status: ProxmoxCephStatus?
+    @State private var pools: [ProxmoxCephPool] = []
+    @State private var editing: ProxmoxCephPool?
+    @State private var creating = false
+    @State private var cephUnavailable = false
+    @State private var loading = true
+    @State private var error: String?
+
+    var body: some View {
+        Group {
+            if cephUnavailable {
+                ContentUnavailableCompat(
+                    title: "Ceph Is Not Configured",
+                    systemImage: "square.3.layers.3d.slash",
+                    description: "Ceph is not installed or initialized on this node. This is expected when the cluster does not use Ceph."
+                )
+            } else {
+                List {
+                    Section("Health") {
+                        LabeledContent("Status", value: status?.health?.status ?? "—")
+                        if let pg = status?.pgmap {
+                            if let used = pg.bytesUsed {
+                                LabeledContent("Used", value: ByteCountFormatter.string(fromByteCount: used, countStyle: .binary))
+                            }
+                            if let available = pg.bytesAvailable {
+                                LabeledContent("Available", value: ByteCountFormatter.string(fromByteCount: available, countStyle: .binary))
+                            }
+                            if let count = pg.totalPGs {
+                                LabeledContent("Placement Groups", value: "\(count)")
+                            }
+                        }
+                    }
+                    Section("Pools") {
+                        ForEach(pools) { pool in
+                            Button { editing = pool } label: {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(pool.name).foregroundStyle(.primary)
+                                        Text("size \(pool.size ?? 0) · PG \(pool.pgNum ?? 0)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if let used = pool.percentUsed {
+                                        Text(used.formatted(.percent.precision(.fractionLength(2))))
+                                            .font(.caption.monospacedDigit())
+                                    }
+                                }
+                            }
+                            .disabled(!canModify)
+                        }
+                    }
+                    if let error { Section { Text(error).foregroundStyle(.red) } }
+                }
+            }
+        }
+        .navigationTitle("Ceph · \(node)")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { creating = true } label: { Image(systemName: "plus") }
+                    .disabled(!canModify || cephUnavailable)
+            }
+        }
+        .overlay { if loading { ProgressView() } }
+        .task { await load() }
+        .refreshable { await load() }
+        .sheet(isPresented: $creating) { CephPoolEditor(node: node, pool: nil) { await load() } }
+        .sheet(item: $editing) { CephPoolEditor(node: node, pool: $0) { await load() } }
+    }
+
+    private var canModify: Bool {
+        appState.hasPrivilege("Sys.Modify", on: "/nodes/\(node)")
+    }
+
+    @MainActor private func load() async {
+        guard let service = appState.service else { return }
+        loading = true
+        error = nil
+        cephUnavailable = false
+        defer { loading = false }
+        do {
+            status = try await service.fetchCephStatus(node: node)
+            pools = try await service.fetchCephPools(node: node)
+        } catch let cephError as ProxmoxError where cephError.indicatesCephUnavailable {
+            status = nil
+            pools = []
+            cephUnavailable = true
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
 }
 
 private struct CephPoolEditor:View{

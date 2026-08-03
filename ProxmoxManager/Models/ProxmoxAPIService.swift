@@ -132,6 +132,22 @@ enum ProxmoxError: LocalizedError {
             return "Two-factor authentication is required. Enter your TOTP code."
         }
     }
+
+    /// Proxmox reports an absent or uninitialized Ceph installation as HTTP
+    /// 500. Keep that expected state separate from an unhealthy Ceph cluster.
+    var indicatesCephUnavailable: Bool {
+        guard case .requestFailed(let status, let body) = self, status == 500 else {
+            return false
+        }
+        let value = body.lowercased()
+        return [
+            "binary not installed",
+            "pveceph configuration not initialized",
+            "pveceph configuration not enabled",
+            "ceph not fully configured",
+            "no ceph configuration",
+        ].contains { value.contains($0) }
+    }
 }
 
 // MARK: - Service
@@ -1490,7 +1506,10 @@ actor ProxmoxAPIService {
                 )
                 throw ProxmoxError.notAuthenticated
             }
-            throw ProxmoxError.requestFailed(status: http.statusCode, body: "")
+            throw ProxmoxError.requestFailed(
+                status: http.statusCode,
+                body: Self.errorMessage(from: data)
+            )
         }
 
         return (data, response)
@@ -1602,6 +1621,21 @@ actor ProxmoxAPIService {
     private static func mutationResult(from data: Data) -> String {
         if let decoded = try? JSONDecoder().decode(ProxmoxResponse<String?>.self, from: data) {
             return decoded.data ?? ""
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private static func errorMessage(from data: Data) -> String {
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let message = object["message"] as? String, !message.isEmpty {
+                return message
+            }
+            if let errors = object["errors"] as? [String: Any], !errors.isEmpty {
+                return errors.keys.sorted().compactMap { key in
+                    guard let value = errors[key] else { return nil }
+                    return "\(key): \(value)"
+                }.joined(separator: "\n")
+            }
         }
         return String(data: data, encoding: .utf8) ?? ""
     }

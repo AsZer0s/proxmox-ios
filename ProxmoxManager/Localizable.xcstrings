@@ -3957,7 +3957,9 @@
     "Thin Pool": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Thin Pool"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"精简池"}}}},
     "Volume Group": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Volume Group"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"卷组"}}}},
     "ZFS": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"ZFS"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"ZFS"}}}},
-    "ZFS Pool": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"ZFS Pool"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"ZFS 池"}}}}
+    "ZFS Pool": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"ZFS Pool"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"ZFS 池"}}}},
+    "Ceph Is Not Configured": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Ceph Is Not Configured"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Ceph 尚未配置"}}}},
+    "Ceph is not installed or initialized on this node. This is expected when the cluster does not use Ceph.": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Ceph is not installed or initialized on this node. This is expected when the cluster does not use Ceph."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"此节点尚未安装或初始化 Ceph。如果集群不使用 Ceph，这是正常状态。"}}}}
   },
   "version": "1.0"
 }

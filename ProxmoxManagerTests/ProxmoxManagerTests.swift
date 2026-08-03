@@ -1002,4 +1002,31 @@ final class ProxmoxManagerTests: XCTestCase {
         )
         XCTAssertTrue(subnet.snat)
     }
+
+    func testCephUnavailableDetectionDoesNotHideRealServerFailures() {
+        XCTAssertTrue(
+            ProxmoxError.requestFailed(
+                status: 500,
+                body: "binary not installed: /usr/bin/ceph-mon"
+            ).indicatesCephUnavailable
+        )
+        XCTAssertTrue(
+            ProxmoxError.requestFailed(
+                status: 500,
+                body: "pveceph configuration not initialized - missing ceph.conf"
+            ).indicatesCephUnavailable
+        )
+        XCTAssertFalse(
+            ProxmoxError.requestFailed(
+                status: 500,
+                body: "RADOS cluster is temporarily unavailable"
+            ).indicatesCephUnavailable
+        )
+        XCTAssertFalse(
+            ProxmoxError.requestFailed(
+                status: 403,
+                body: "permission denied"
+            ).indicatesCephUnavailable
+        )
+    }
 }
