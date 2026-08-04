@@ -148,6 +148,39 @@ enum ProxmoxError: LocalizedError {
             "no ceph configuration",
         ].contains { value.contains($0) }
     }
+
+    /// Some cluster-wide APIs report an expected unavailable state as HTTP
+    /// 500 (for example replication on a standalone node). Keep those states
+    /// distinct from an actual server failure so one optional subsystem does
+    /// not blank the complete management screen.
+    var indicatesClusterFeatureUnavailable: Bool {
+        guard case .requestFailed(let status, let body) = self,
+              [400, 404, 500, 501, 503].contains(status) else { return false }
+        let value = body.lowercased()
+        return [
+            "not in a cluster",
+            "not a cluster member",
+            "cluster is not ready",
+            "no quorum",
+            "not configured",
+            "no such file or directory",
+            "does not exist",
+            "not supported",
+            "service unavailable",
+            "connection refused",
+        ].contains { value.contains($0) }
+    }
+
+    var responseDetail: String? {
+        guard case .requestFailed(_, let body) = self else { return nil }
+        let value = body.trimmed
+        return value.isEmpty ? nil : value
+    }
+
+    var responseStatus: Int? {
+        guard case .requestFailed(let status, _) = self else { return nil }
+        return status
+    }
 }
 
 // MARK: - Service

@@ -1074,4 +1074,46 @@ final class ProxmoxManagerTests: XCTestCase {
             ).indicatesCephUnavailable
         )
     }
+
+    func testClusterFeatureUnavailableDetectionDoesNotHideRealServerFailures() {
+        XCTAssertTrue(
+            ProxmoxError.requestFailed(
+                status: 500,
+                body: "this node is not in a cluster"
+            ).indicatesClusterFeatureUnavailable
+        )
+        XCTAssertTrue(
+            ProxmoxError.requestFailed(
+                status: 500,
+                body: "cluster not ready - no quorum?"
+            ).indicatesClusterFeatureUnavailable
+        )
+        XCTAssertTrue(
+            ProxmoxError.requestFailed(
+                status: 501,
+                body: "replication is not supported"
+            ).indicatesClusterFeatureUnavailable
+        )
+        XCTAssertFalse(
+            ProxmoxError.requestFailed(
+                status: 500,
+                body: "database transaction failed"
+            ).indicatesClusterFeatureUnavailable
+        )
+        XCTAssertFalse(
+            ProxmoxError.requestFailed(
+                status: 403,
+                body: "not in a cluster"
+            ).indicatesClusterFeatureUnavailable
+        )
+    }
+
+    func testRequestFailureResponseDetail() {
+        let failure = ProxmoxError.requestFailed(status: 500, body: "  server detail\n")
+        XCTAssertEqual(failure.responseDetail, "server detail")
+        XCTAssertEqual(failure.responseStatus, 500)
+        XCTAssertNil(ProxmoxError.requestFailed(status: 500, body: "  \n").responseDetail)
+        XCTAssertNil(ProxmoxError.network("offline").responseDetail)
+        XCTAssertNil(ProxmoxError.network("offline").responseStatus)
+    }
 }

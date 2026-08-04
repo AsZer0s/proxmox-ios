@@ -9,6 +9,10 @@ struct HAReplicationView: View {
     @State private var selection = 0
     @State private var isLoading = true
     @State private var error: String?
+    @State private var haStatusUnavailable: String?
+    @State private var haResourcesUnavailable: String?
+    @State private var groupsUnavailable: String?
+    @State private var replicationUnavailable: String?
     @State private var editingResource: ProxmoxHAResource?
     @State private var editingGroup: ProxmoxHAGroup?
     @State private var editingJob: ProxmoxReplicationJob?
@@ -78,7 +82,11 @@ struct HAReplicationView: View {
 
     @ViewBuilder private var haContent: some View {
         Section("Cluster State") {
-            if status.isEmpty { Text("No HA status is available.").foregroundStyle(.secondary) }
+            if let haStatusUnavailable {
+                unavailableRow(haStatusUnavailable)
+            } else if status.isEmpty {
+                Text("No HA status is available.").foregroundStyle(.secondary)
+            }
             ForEach(status) { item in
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
@@ -95,7 +103,11 @@ struct HAReplicationView: View {
             }
         }
         Section("HA Resources") {
-            if resources.isEmpty { Text("No HA resources configured.").foregroundStyle(.secondary) }
+            if let haResourcesUnavailable {
+                unavailableRow(haResourcesUnavailable)
+            } else if resources.isEmpty {
+                Text("No HA resources configured.").foregroundStyle(.secondary)
+            }
             ForEach(resources) { item in
                 Button { editingResource = item } label: {
                     HStack {
@@ -118,7 +130,11 @@ struct HAReplicationView: View {
                 .font(.footnote).foregroundStyle(.secondary)
         }
         Section("HA Groups") {
-            if groups.isEmpty { Text("No HA groups configured.").foregroundStyle(.secondary) }
+            if let groupsUnavailable {
+                unavailableRow(groupsUnavailable)
+            } else if groups.isEmpty {
+                Text("No HA groups configured.").foregroundStyle(.secondary)
+            }
             ForEach(groups) { item in
                 Button { editingGroup = item } label: {
                     VStack(alignment: .leading, spacing: 3) {
@@ -133,7 +149,11 @@ struct HAReplicationView: View {
 
     @ViewBuilder private var replicationContent: some View {
         Section("Replication Jobs") {
-            if jobs.isEmpty { Text("No replication jobs configured.").foregroundStyle(.secondary) }
+            if let replicationUnavailable {
+                unavailableRow(replicationUnavailable)
+            } else if jobs.isEmpty {
+                Text("No replication jobs configured.").foregroundStyle(.secondary)
+            }
             ForEach(jobs) { item in
                 Button { editingJob = item } label: {
                     HStack {
@@ -152,19 +172,106 @@ struct HAReplicationView: View {
 
     private var canModifyHA: Bool { appState.hasPrivilege("Sys.Console", on: "/") }
     private var canModifyReplication: Bool { appState.hasPrivilege("VM.Replicate", on: "/") }
-    private var canModifyCurrentSection: Bool { selection == 2 ? canModifyReplication : canModifyHA }
+    private var canModifyCurrentSection: Bool {
+        if selection == 2 { return canModifyReplication && replicationUnavailable == nil }
+        if selection == 1 { return canModifyHA && groupsUnavailable == nil }
+        return canModifyHA && haResourcesUnavailable == nil
+    }
+
+    private func unavailableRow(_ message: String) -> some View {
+        Label(message, systemImage: "info.circle")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+    }
 
     @MainActor private func load() async {
         guard let service = appState.service else { return }
-        isLoading = true; error = nil
+        isLoading = true
+        error = nil
+        haStatusUnavailable = nil
+        haResourcesUnavailable = nil
+        groupsUnavailable = nil
+        replicationUnavailable = nil
         defer { isLoading = false }
-        async let a = service.fetchHAStatus()
-        async let b = service.fetchHAResources()
-        async let c = service.fetchHAGroups()
-        async let d = service.fetchReplicationJobs()
-        do { (status, resources, groups, jobs) = try await (a, b, c, d) }
-        catch { self.error = error.localizedDescription }
+        async let a = captureResult { try await service.fetchHAStatus() }
+        async let b = captureResult { try await service.fetchHAResources() }
+        async let c = captureResult { try await service.fetchHAGroups() }
+        async let d = captureResult { try await service.fetchReplicationJobs() }
+        async let e = captureResult { try await service.fetchClusterStatus() }
+        let (statusResult, resourceResult, groupResult, replicationResult, clusterResult) = await (a, b, c, d, e)
+        let isStandalone: Bool
+        switch clusterResult {
+        case .success(let entries):
+            isStandalone = !entries.contains { $0.type == "cluster" }
+        case .failure:
+            isStandalone = false
+        }
+
+        switch statusResult {
+        case .success(let value): status = value
+        case .failure(let failure):
+            status = []
+            handle(failure, feature: .haStatus, isStandalone: isStandalone)
+        }
+        switch resourceResult {
+        case .success(let value): resources = value
+        case .failure(let failure):
+            resources = []
+            handle(failure, feature: .haResources, isStandalone: isStandalone)
+        }
+        switch groupResult {
+        case .success(let value): groups = value
+        case .failure(let failure):
+            groups = []
+            handle(failure, feature: .groups, isStandalone: isStandalone)
+        }
+        switch replicationResult {
+        case .success(let value): jobs = value
+        case .failure(let failure):
+            jobs = []
+            handle(failure, feature: .replication, isStandalone: isStandalone)
+        }
     }
+
+    private enum OptionalFeature { case haStatus, haResources, groups, replication }
+
+    private func handle(_ failure: Error, feature: OptionalFeature, isStandalone: Bool) {
+        let proxmoxError = failure as? ProxmoxError
+        let expectedUnavailable = proxmoxError?.indicatesClusterFeatureUnavailable == true
+            || (isStandalone && proxmoxError?.responseStatus == 500)
+        if expectedUnavailable {
+            let message: String
+            switch feature {
+            case .haStatus, .haResources:
+                message = String(localized: "HA is not configured or available on this cluster.")
+            case .groups: message = String(localized: "HA migration policy is not available on this cluster.")
+            case .replication: message = String(localized: "Replication is unavailable on a standalone or unsupported cluster.")
+            }
+            switch feature {
+            case .haStatus: haStatusUnavailable = message
+            case .haResources: haResourcesUnavailable = message
+            case .groups: groupsUnavailable = message
+            case .replication: replicationUnavailable = message
+            }
+            return
+        }
+
+        let detail = proxmoxError?.responseDetail ?? failure.localizedDescription
+        let prefix: String
+        switch feature {
+        case .haStatus, .haResources: prefix = String(localized: "HA request failed")
+        case .groups: prefix = String(localized: "Migration policy request failed")
+        case .replication: prefix = String(localized: "Replication request failed")
+        }
+        let message = "\(prefix): \(detail)"
+        if error == nil { error = message }
+        else if error?.contains(message) == false { error? += "\n\(message)" }
+    }
+}
+
+private func captureResult<T>(_ operation: @escaping () async throws -> T) async -> Result<T, Error> {
+    do { return .success(try await operation()) }
+    catch { return .failure(error) }
 }
 
 private struct HAResourceEditor: View {
