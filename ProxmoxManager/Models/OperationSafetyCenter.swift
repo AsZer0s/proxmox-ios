@@ -1,5 +1,6 @@
 import Foundation
 import LocalAuthentication
+import UserNotifications
 
 extension Notification.Name {
     static let proxmoxMutationCompleted = Notification.Name("proxmoxMutationCompleted")
@@ -82,6 +83,13 @@ final class OperationSafetyCenter: ObservableObject {
     func schedule(_ operation: ScheduledOperation) {
         scheduled.append(operation)
         record(serverID: operation.serverID, method: "SCHEDULE", path: "/nodes/\(operation.node)/\(operation.guestType.apiPath)/\(operation.vmid)/status/\(operation.kind.rawValue)", changes: ["executeAt": operation.executeAt.ISO8601Format()], result: .scheduled)
+        scheduleReminder(for: operation)
+    }
+
+    func removeScheduled(at offsets: IndexSet) {
+        let identifiers = offsets.map { reminderIdentifier(for: scheduled[$0]) }
+        scheduled.remove(atOffsets: offsets)
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
     }
 
     func retry(_ entry: OperationAuditEntry) async throws {
@@ -118,10 +126,14 @@ final class OperationSafetyCenter: ObservableObject {
                 _ = try await service.performAction(action, node: operation.node, type: operation.guestType, vmid: operation.vmid)
                 scheduled[index].completed = true
                 scheduled[index].lastError = nil
+                removeReminder(for: operation)
             } catch {
                 scheduled[index].retryCount += 1
                 scheduled[index].lastError = error.localizedDescription
-                if scheduled[index].retryCount > scheduled[index].maximumRetries { scheduled[index].completed = true }
+                if scheduled[index].retryCount > scheduled[index].maximumRetries {
+                    scheduled[index].completed = true
+                    removeReminder(for: operation)
+                }
             }
         }
     }
@@ -140,6 +152,40 @@ final class OperationSafetyCenter: ObservableObject {
 
     private func persistAudits() { Self.save(audits, "operations.audit") }
     private func persistScheduled() { Self.save(scheduled, "operations.scheduled") }
+    private func reminderIdentifier(for operation: ScheduledOperation) -> String {
+        "scheduled-operation.\(operation.id.uuidString)"
+    }
+
+    private func removeReminder(for operation: ScheduledOperation) {
+        let identifier = reminderIdentifier(for: operation)
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        center.removeDeliveredNotifications(withIdentifiers: [identifier])
+    }
+
+    private func scheduleReminder(for operation: ScheduledOperation) {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
+            var authorized = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+            if settings.authorizationStatus == .notDetermined {
+                authorized = (try? await center.requestAuthorization(options: [.alert, .badge, .sound])) == true
+            }
+            guard authorized else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Scheduled Proxmox Operation")
+            content.body = String(localized: "Open Proxmox Manager to run \(operation.kind.label) for \(operation.guestType.rawValue.uppercased()) \(operation.vmid) on \(operation.node).")
+            content.sound = .default
+            let components = Calendar.current.dateComponents(
+                [.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second],
+                from: operation.executeAt
+            )
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            let request = UNNotificationRequest(identifier: reminderIdentifier(for: operation), content: content, trigger: trigger)
+            try? await center.add(request)
+        }
+    }
     private static func save<T: Encodable>(_ value: T, _ key: String) { if let data=try? JSONEncoder().encode(value){UserDefaults.standard.set(data,forKey:key)} }
     private static func load<T: Decodable>(_ key: String, fallback: T) -> T { guard let data=UserDefaults.standard.data(forKey:key),let value=try? JSONDecoder().decode(T.self,from:data) else { return fallback }; return value }
 }

@@ -326,6 +326,10 @@ struct AlertSettingsView: View {
         center.memoryThreshold = memory
         center.storageThreshold = storage
         Task { await center.restartMonitoring() }
+        if !relayURL.trimmed.isEmpty, !enrollmentToken.isEmpty {
+            saveRelay()
+            Task { await appState.remoteNotifications.sync(servers: appState.servers) }
+        }
         dismiss()
     }
 

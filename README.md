@@ -47,7 +47,7 @@ Whether you are checking cluster health, responding to an unavailable guest, or 
 | **Users and permissions** | Manage users, roles, ACL entries, and API Tokens, including one-time token secret handling. |
 | **Cluster infrastructure** | Manage quorum and membership, node networking, storage, Ceph pools/OSD/MON/MGR, and SDN zones, VNets, subnets, controllers, IPAM, and DNS. |
 | **Batch operations** | Select multiple VMs and containers to start, shut down, force-stop, migrate, or back up together. |
-| **Operation safety** | Review change parameters and impact, authorize critical schedules with device-owner authentication, keep an audit trail, retry operations, and define maintenance windows. |
+| **Operation safety** | Review change parameters and impact, authorize critical schedules with device-owner authentication, receive due-operation reminders, keep an audit trail, retry operations, and define maintenance windows. Scheduled commands run while the app is active. |
 | **Personal workspace** | Favorites, reorderable dashboard sections, multi-cluster overview, a favorite-guest widget, and Siri/Shortcuts actions. |
 
 ## Secure by design

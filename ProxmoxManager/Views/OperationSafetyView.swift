@@ -20,6 +20,9 @@ struct OperationSafetyView: View {
             }
 
             Section("Scheduled Operations") {
+                Text("Scheduled commands run only while the app is active. A local notification reminds you when the operation is due.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 ForEach(center.scheduled) { operation in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -33,7 +36,7 @@ struct OperationSafetyView: View {
                         if let error = operation.lastError { Text(error).font(.caption).foregroundStyle(.red) }
                     }
                 }
-                .onDelete { center.scheduled.remove(atOffsets: $0) }
+                .onDelete { center.removeScheduled(at: $0) }
                 Button { adding = true } label: { Label("Schedule Operation", systemImage: "calendar.badge.plus") }
             }
 

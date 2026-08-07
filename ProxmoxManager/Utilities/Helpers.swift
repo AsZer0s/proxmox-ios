@@ -64,6 +64,18 @@ enum KeychainHelper {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Removes an independently named secret, such as a PBS credential.
+    @discardableResult
+    static func deleteGenericSecret(account: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
     @discardableResult
     static func saveSecret(_ secret: String, authMethod: AuthMethod, for serverID: UUID) -> Bool {
         let account = self.account(for: serverID, suffix: authMethod == .token ? "token" : "password")

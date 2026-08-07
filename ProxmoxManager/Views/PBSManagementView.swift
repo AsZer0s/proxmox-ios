@@ -6,6 +6,7 @@ struct PBSManagementView: View {
     @State private var connected: PBSServer?
     @State private var datastores: [PBSDatastore] = []
     @State private var adding = false
+    @State private var editing: PBSServer?
     @State private var loading = false
     @State private var error: String?
 
@@ -51,6 +52,8 @@ struct PBSManagementView: View {
                         }
                         .swipeActions {
                             Button("Delete", role: .destructive) { remove(server) }
+                            Button("Edit") { editing = server }
+                                .tint(.blue)
                         }
                     }
                     Button { adding = true } label: { Label("Add Backup Server", systemImage: "plus") }
@@ -63,10 +66,27 @@ struct PBSManagementView: View {
         .refreshable { if let connected { await connect(connected) } }
         .sheet(isPresented: $adding) {
             PBSServerEditor { server, secret in
+                guard let secret else { return }
                 servers.append(server)
                 PBSStore.save(servers)
                 _ = KeychainHelper.saveGenericSecret(secret, account: "pbs.\(server.id.uuidString)")
                 Task { await connect(server) }
+            }
+        }
+        .sheet(item: $editing) { server in
+            PBSServerEditor(server: server) { updated, replacementSecret in
+                guard let index = servers.firstIndex(where: { $0.id == updated.id }) else { return }
+                servers[index] = updated
+                PBSStore.save(servers)
+                if let replacementSecret, !replacementSecret.isEmpty {
+                    _ = KeychainHelper.saveGenericSecret(
+                        replacementSecret,
+                        account: "pbs.\(updated.id.uuidString)"
+                    )
+                }
+                if connected?.id == updated.id {
+                    Task { await connect(updated) }
+                }
             }
         }
     }
@@ -88,21 +108,41 @@ struct PBSManagementView: View {
     private func remove(_ server: PBSServer) {
         servers.removeAll { $0.id == server.id }
         PBSStore.save(servers)
+        _ = KeychainHelper.deleteGenericSecret(account: "pbs.\(server.id.uuidString)")
+        if connected?.id == server.id {
+            connected = nil
+            service = nil
+            datastores = []
+        }
     }
 }
 
 private struct PBSServerEditor: View {
     @Environment(\.dismiss) private var dismiss
-    let onSave: (PBSServer, String) -> Void
-    @State private var name = ""
-    @State private var host = ""
-    @State private var port = "8007"
-    @State private var username = "root@pam"
-    @State private var auth = PBSAuthMethod.token
-    @State private var tokenID = ""
+    private let existingServer: PBSServer?
+    let onSave: (PBSServer, String?) -> Void
+    @State private var name: String
+    @State private var host: String
+    @State private var port: String
+    @State private var username: String
+    @State private var auth: PBSAuthMethod
+    @State private var tokenID: String
     @State private var secret = ""
-    @State private var insecure = false
-    @State private var fingerprint = ""
+    @State private var insecure: Bool
+    @State private var fingerprint: String
+
+    init(server: PBSServer? = nil, onSave: @escaping (PBSServer, String?) -> Void) {
+        existingServer = server
+        self.onSave = onSave
+        _name = State(initialValue: server?.name ?? "")
+        _host = State(initialValue: server?.host ?? "")
+        _port = State(initialValue: String(server?.port ?? 8007))
+        _username = State(initialValue: server?.username ?? "root@pam")
+        _auth = State(initialValue: server?.authMethod ?? .token)
+        _tokenID = State(initialValue: server?.tokenID ?? "")
+        _insecure = State(initialValue: server?.allowInsecureSSL ?? false)
+        _fingerprint = State(initialValue: server?.certificateFingerprint ?? "")
+    }
 
     var body: some View {
         NavigationStack {
@@ -116,22 +156,24 @@ private struct PBSServerEditor: View {
                     Picker("Method", selection: $auth) { ForEach(PBSAuthMethod.allCases) { Text($0.label).tag($0) } }
                     if auth == .ticket { TextField("Username", text: $username) }
                     else { TextField("Token ID", text: $tokenID).textInputAutocapitalization(.never).autocorrectionDisabled() }
-                    SecureField(auth == .ticket ? String(localized: "Password") : String(localized: "Token Secret"), text: $secret)
+                    SecureField(existingServer == nil ? (auth == .ticket ? String(localized: "Password") : String(localized: "Token Secret")) : String(localized: "New secret (optional)"), text: $secret)
                 }
                 Section {
                     Toggle("Allow self-signed certificate", isOn: $insecure)
                     if insecure { TextField("SHA-256 Certificate Fingerprint", text: $fingerprint).textInputAutocapitalization(.characters).autocorrectionDisabled() }
                 } footer: { if insecure { Text("Copy the SHA-256 fingerprint from the PBS server and verify it through a separate trusted channel.") } }
             }
-            .navigationTitle("Add Backup Server")
+            .navigationTitle(existingServer == nil ? String(localized: "Add Backup Server") : String(localized: "Edit Backup Server"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(PBSServer(name: name.trimmed, host: host.trimmed, port: Int(port) ?? 8007, username: username.trimmed, authMethod: auth, tokenID: tokenID.trimmed, allowInsecureSSL: insecure, certificateFingerprint: fingerprint.trimmed), secret)
+                        var server = PBSServer(name: name.trimmed, host: host.trimmed, port: Int(port) ?? 8007, username: username.trimmed, authMethod: auth, tokenID: tokenID.trimmed, allowInsecureSSL: insecure, certificateFingerprint: fingerprint.trimmed)
+                        if let existingServer { server.id = existingServer.id }
+                        onSave(server, secret.trimmed.isEmpty ? nil : secret)
                         dismiss()
-                    }.disabled(name.trimmed.isEmpty || host.trimmed.isEmpty || secret.isEmpty || (auth == .token && tokenID.trimmed.isEmpty) || (insecure && fingerprint.filter(\.isHexDigit).count != 64))
+                    }.disabled(name.trimmed.isEmpty || host.trimmed.isEmpty || (existingServer == nil && secret.isEmpty) || (auth == .token && tokenID.trimmed.isEmpty) || (insecure && fingerprint.filter(\.isHexDigit).count != 64))
                 }
             }
         }
@@ -145,6 +187,7 @@ private struct PBSDatastoreView: View {
     @State private var groups: [PBSBackupGroup] = []
     @State private var snapshots: [PBSBackupSnapshot] = []
     @State private var selectedGroup: PBSBackupGroup?
+    @State private var snapshotToDelete: PBSBackupSnapshot?
     @State private var loading = true
     @State private var error: String?
 
@@ -186,6 +229,8 @@ private struct PBSDatastoreView: View {
                                     .font(.caption).foregroundStyle(snapshot.verification?.state == "ok" ? .green : .secondary)
                             }
                             Button("Verify Snapshot") { Task { await verify(snapshot) } }.font(.caption)
+                            Button("Delete Snapshot", role: .destructive) { snapshotToDelete = snapshot }
+                                .font(.caption)
                         }
                     }
                 }
@@ -196,6 +241,18 @@ private struct PBSDatastoreView: View {
         .overlay { if loading { ProgressView() } }
         .task { await load() }
         .refreshable { await load() }
+        .alert("Delete PBS Snapshot?", isPresented: Binding(
+            get: { snapshotToDelete != nil },
+            set: { if !$0 { snapshotToDelete = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let snapshotToDelete { Task { await delete(snapshotToDelete) } }
+                snapshotToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { snapshotToDelete = nil }
+        } message: {
+            Text("This permanently removes the selected backup snapshot.")
+        }
     }
 
     private func byte(_ value: UInt64?) -> String { value.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .binary) } ?? "—" }
@@ -210,6 +267,12 @@ private struct PBSDatastoreView: View {
     }
     @MainActor private func garbageCollect() async { do { _ = try await service.garbageCollect(store: datastore.store); await load() } catch { self.error = error.localizedDescription } }
     @MainActor private func verify(_ snapshot: PBSBackupSnapshot) async { do { _ = try await service.verify(store: datastore.store, snapshot: snapshot); if let group = selectedGroup { await loadSnapshots(group) } } catch { self.error = error.localizedDescription } }
+    @MainActor private func delete(_ snapshot: PBSBackupSnapshot) async {
+        do {
+            try await service.deleteSnapshot(store: datastore.store, snapshot: snapshot)
+            if let group = selectedGroup { await loadSnapshots(group) }
+        } catch { self.error = error.localizedDescription }
+    }
 }
 
 private struct PBSJobsView: View {

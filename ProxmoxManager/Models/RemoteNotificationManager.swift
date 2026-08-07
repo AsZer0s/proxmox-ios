@@ -71,6 +71,14 @@ final class RemoteNotificationManager: ObservableObject {
     @Published private(set) var lastError: String?
     @Published var rules: [AlertRule] { didSet { persistRules() } }
 
+    static func deviceEndpointPath(for deviceToken: String) -> String {
+        "/v1/devices/\(deviceToken)"
+    }
+
+    static func authorizationHeader(for enrollmentToken: String) -> String {
+        "Bearer \(enrollmentToken)"
+    }
+
     var relayURL: String {
         get { UserDefaults.standard.string(forKey: "push.relayURL") ?? "" }
         set { UserDefaults.standard.set(newValue.trimmed, forKey: "push.relayURL") }
@@ -84,6 +92,7 @@ final class RemoteNotificationManager: ObservableObject {
     private var observers: [NSObjectProtocol] = []
 
     init() {
+        deviceToken = UserDefaults.standard.string(forKey: "push.deviceToken") ?? ""
         if let data = UserDefaults.standard.data(forKey: "alerts.rules"),
            let saved = try? JSONDecoder().decode([AlertRule].self, from: data) {
             rules = saved
@@ -130,12 +139,23 @@ final class RemoteNotificationManager: ObservableObject {
     }
 
     func unregister() async {
-        guard let url = endpoint("/v1/devices/(deviceToken)") else { return }
+        guard !deviceToken.isEmpty,
+              let url = endpoint(Self.deviceEndpointPath(for: deviceToken)) else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         authorize(&request)
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw URLError(.badServerResponse)
+            }
+        } catch {
+            lastError = error.localizedDescription
+            return
+        }
         UIApplication.shared.unregisterForRemoteNotifications()
+        deviceToken = ""
+        UserDefaults.standard.removeObject(forKey: "push.deviceToken")
         registrationState = String(localized: "Not Registered")
     }
 
@@ -181,7 +201,9 @@ final class RemoteNotificationManager: ObservableObject {
     }
 
     private func endpoint(_ path: String) -> URL? {
-        guard var components = URLComponents(string: relayURL), !relayURL.isEmpty else { return nil }
+        guard var components = URLComponents(string: relayURL),
+              components.scheme?.lowercased() == "https",
+              components.host != nil else { return nil }
         let base = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let suffix = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         components.path = "/" + [base, suffix].filter { !$0.isEmpty }.joined(separator: "/")
@@ -189,7 +211,7 @@ final class RemoteNotificationManager: ObservableObject {
     }
 
     private func authorize(_ request: inout URLRequest) {
-        request.setValue("Bearer (enrollmentToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(Self.authorizationHeader(for: enrollmentToken), forHTTPHeaderField: "Authorization")
     }
 
     private func persistRules() {

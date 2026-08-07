@@ -32,6 +32,7 @@ struct ContentView: View {
         }
         .animation(.default, value: appState.isConnected)
         .animation(.default, value: appState.appLocked)
+        .onOpenURL { appState.handleDeepLink($0) }
         .onChange(of: scenePhase) { phase in
             switch phase {
             case .active:

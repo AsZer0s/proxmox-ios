@@ -150,6 +150,13 @@ actor PBSAPIService {
             "backup-type": snapshot.backupType, "backup-id": snapshot.backupID, "backup-time": String(snapshot.backupTime)
         ])
     }
+    func deleteSnapshot(store: String, snapshot: PBSBackupSnapshot) async throws {
+        try await mutate("/admin/datastore/\(store.pathEscaped)/snapshots", method: "DELETE", form: [
+            "backup-type": snapshot.backupType,
+            "backup-id": snapshot.backupID,
+            "backup-time": String(snapshot.backupTime),
+        ])
+    }
     func pruneJobs() async throws -> [PBSJob] { try await request("/config/prune") }
     func verifyJobs() async throws -> [PBSJob] { try await request("/config/verify") }
     func syncJobs() async throws -> [PBSJob] { try await request("/config/sync") }

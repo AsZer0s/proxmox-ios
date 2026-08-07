@@ -21,6 +21,10 @@ struct TFAChallengeState: Identifiable {
     let info: TFAChallengeInfo?
 }
 
+enum DashboardTab: Hashable {
+    case overview, guests, tasks, manage, settings
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var servers: [ProxmoxServer]
@@ -37,6 +41,7 @@ final class AppState: ObservableObject {
     @Published var remoteNotifications = RemoteNotificationManager()
     @Published var operationSafety = OperationSafetyCenter()
     @Published var dashboard = DashboardCenter()
+    @Published var selectedDashboardTab: DashboardTab = .overview
     private var authenticationObserver: NSObjectProtocol?
     /// Cancels an in-flight connection when a new one is started.
     private var connectionTask: Task<Void, Never>?
@@ -289,5 +294,17 @@ final class AppState: ObservableObject {
         taskCenter.deactivate()
         alertCenter.deactivate()
         operationSafety.deactivate()
+    }
+
+    func handleDeepLink(_ url: URL) {
+        guard url.scheme?.lowercased() == "proxmoxmanager" else { return }
+        switch url.host?.lowercased() {
+        case "dashboard": selectedDashboardTab = .overview
+        case "guests": selectedDashboardTab = .guests
+        case "tasks": selectedDashboardTab = .tasks
+        case "manage": selectedDashboardTab = .manage
+        case "settings": selectedDashboardTab = .settings
+        default: break
+        }
     }
 }

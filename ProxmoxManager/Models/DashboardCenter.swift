@@ -1,4 +1,5 @@
 import Foundation
+import WidgetKit
 
 struct FavoriteGuest: Identifiable, Codable, Hashable {
     var id: String { "\(serverID.uuidString):\(type.rawValue):\(vmid)" }
@@ -64,6 +65,7 @@ final class DashboardCenter: ObservableObject {
         if let defaults = UserDefaults(suiteName: "group.com.aszer0s.proxmoxmanager") {
             defaults.set(try? JSONEncoder().encode(cache), forKey: "widget.guests")
             defaults.set(Date(), forKey: "widget.updated")
+            WidgetCenter.shared.reloadTimelines(ofKind: "ProxmoxFavorites")
         }
     }
     private func persistSections() { Self.encode(sections, key:"dashboard.sections");Self.encode(Array(hiddenSections),key:"dashboard.hidden") }

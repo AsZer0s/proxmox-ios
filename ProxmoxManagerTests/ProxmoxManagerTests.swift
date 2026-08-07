@@ -41,6 +41,17 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(server.authMethod, .token)
     }
 
+    func testRemoteNotificationRequestsUseTheConfiguredValues() {
+        XCTAssertEqual(
+            RemoteNotificationManager.deviceEndpointPath(for: "abcdef"),
+            "/v1/devices/abcdef"
+        )
+        XCTAssertEqual(
+            RemoteNotificationManager.authorizationHeader(for: "enrollment-secret"),
+            "Bearer enrollment-secret"
+        )
+    }
+
     func testAlertRulesProvideAllCriticalDefaults() {
         XCTAssertEqual(Set(AlertRule.defaults.map(\.kind)), Set(AlertRule.Kind.allCases))
         XCTAssertEqual(AlertRule.defaults.first(where: { $0.kind == .cpu })?.threshold, 0.90)
