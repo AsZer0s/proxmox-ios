@@ -6,6 +6,7 @@ struct PBSManagementView: View {
     @State private var service: PBSAPIService?
     @State private var connected: PBSServer?
     @State private var datastores: [PBSDatastore] = []
+    @State private var pveNodes: [ProxmoxNode] = []
     @State private var adding = false
     @State private var editing: PBSServer?
     @State private var loading = false
@@ -39,7 +40,15 @@ struct PBSManagementView: View {
                 Section("Jobs") {
                     NavigationLink("Prune, Verify & Sync") { PBSJobsView(service: service) }
                     NavigationLink("Task History") { PBSTasksView(service: service) }
-                    NavigationLink("Restore Through PVE Storage") { BackupsView() }
+                    if let node = pveNodes.first?.node {
+                        NavigationLink("Restore Through PVE Storage") { BackupsView(node: node) }
+                    } else {
+                        Label("Restore Through PVE Storage", systemImage: "externaldrive.badge.xmark")
+                            .foregroundStyle(.secondary)
+                        Text("Connect to a PVE server to restore through its storage.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             } else {
                 Section("Backup Servers") {
@@ -67,6 +76,7 @@ struct PBSManagementView: View {
         .navigationTitle("Proxmox Backup Server")
         .overlay { if loading { ProgressView() } }
         .refreshable { if let connected { await connect(connected) } }
+        .task { await loadPVENodes() }
         .sheet(isPresented: $adding) {
             PBSServerEditor { server, secret in
                 guard let secret else { return }
@@ -106,6 +116,11 @@ struct PBSManagementView: View {
             self.service = service
             connected = server
         } catch { self.error = error.localizedDescription }
+    }
+
+    @MainActor private func loadPVENodes() async {
+        guard let pveService = appState.service else { return }
+        pveNodes = (try? await pveService.fetchNodes()) ?? []
     }
 
     private func remove(_ server: PBSServer) {

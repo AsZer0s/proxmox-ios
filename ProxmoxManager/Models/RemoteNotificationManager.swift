@@ -71,11 +71,11 @@ final class RemoteNotificationManager: ObservableObject {
     @Published private(set) var lastError: String?
     @Published var rules: [AlertRule] { didSet { persistRules() } }
 
-    static func deviceEndpointPath(for deviceToken: String) -> String {
+    nonisolated static func deviceEndpointPath(for deviceToken: String) -> String {
         "/v1/devices/\(deviceToken)"
     }
 
-    static func authorizationHeader(for enrollmentToken: String) -> String {
+    nonisolated static func authorizationHeader(for enrollmentToken: String) -> String {
         "Bearer \(enrollmentToken)"
     }
 

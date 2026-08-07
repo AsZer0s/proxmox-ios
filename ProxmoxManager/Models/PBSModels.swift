@@ -143,6 +143,15 @@ struct PBSTaskLogEntry: Decodable, Identifiable, Hashable {
     var id: Int { n }
 }
 
+private extension KeyedDecodingContainer {
+    func decodeFlexibleInt64(forKey key: Key) -> Int64? {
+        if let value = try? decode(Int64.self, forKey: key) { return value }
+        if let value = try? decode(Int.self, forKey: key) { return Int64(value) }
+        if let value = try? decode(String.self, forKey: key) { return Int64(value) }
+        return nil
+    }
+}
+
 actor PBSAPIService {
     private let server: PBSServer
     private let secret: String

@@ -120,8 +120,8 @@ final class OperationSafetyCenter: ObservableObject {
         let now = Date()
         guard isInsideMaintenanceWindow(now) else { return }
         for index in scheduled.indices where !scheduled[index].completed && scheduled[index].serverID == serverID && scheduled[index].executeAt <= now {
+            let operation = scheduled[index]
             do {
-                let operation = scheduled[index]
                 let action = GuestAction(rawValue: operation.kind.rawValue) ?? .shutdown
                 _ = try await service.performAction(action, node: operation.node, type: operation.guestType, vmid: operation.vmid)
                 scheduled[index].completed = true
