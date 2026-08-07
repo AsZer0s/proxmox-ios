@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct PBSManagementView: View {
+    @EnvironmentObject private var appState: AppState
     @State private var servers = PBSStore.load()
     @State private var service: PBSAPIService?
     @State private var connected: PBSServer?
@@ -37,6 +38,8 @@ struct PBSManagementView: View {
                 }
                 Section("Jobs") {
                     NavigationLink("Prune, Verify & Sync") { PBSJobsView(service: service) }
+                    NavigationLink("Task History") { PBSTasksView(service: service) }
+                    NavigationLink("Restore Through PVE Storage") { BackupsView() }
                 }
             } else {
                 Section("Backup Servers") {
@@ -305,6 +308,69 @@ private struct PBSJobsView: View {
     }
     @MainActor private func load() async { do { jobs = try await (kind == "prune" ? service.pruneJobs() : kind == "verify" ? service.verifyJobs() : service.syncJobs()) } catch { self.error = error.localizedDescription } }
     @MainActor private func run(_ job: PBSJob) async { do { _ = try await (kind == "prune" ? service.runPruneJob(id: job.id) : kind == "verify" ? service.runVerifyJob(id: job.id) : service.runSyncJob(id: job.id)); await load() } catch { self.error = error.localizedDescription } }
+}
+
+private struct PBSTasksView: View {
+    let service: PBSAPIService
+    @State private var tasks: [PBSTask] = []
+    @State private var loading = true
+    @State private var error: String?
+
+    var body: some View {
+        List {
+            if tasks.isEmpty && !loading { Text("No PBS tasks are available.").foregroundStyle(.secondary) }
+            ForEach(tasks) { task in
+                NavigationLink {
+                    PBSTaskLogView(service: service, task: task)
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(task.workerType ?? task.upid).foregroundStyle(.primary)
+                        Text([task.status, task.user, task.startTime.map { Date(timeIntervalSince1970: TimeInterval($0)).formatted(date: .abbreviated, time: .shortened) }].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let error { Text(error).foregroundStyle(.red) }
+        }
+        .navigationTitle("PBS Tasks")
+        .overlay { if loading { ProgressView() } }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @MainActor private func load() async {
+        loading = true; defer { loading = false }
+        do { tasks = try await service.tasks() }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct PBSTaskLogView: View {
+    let service: PBSAPIService
+    let task: PBSTask
+    @State private var entries: [PBSTaskLogEntry] = []
+    @State private var loading = true
+    @State private var error: String?
+
+    var body: some View {
+        List {
+            if entries.isEmpty && !loading { Text("No task log entries are available.").foregroundStyle(.secondary) }
+            ForEach(entries) { entry in
+                Text(entry.t).font(.caption.monospaced()).textSelection(.enabled)
+            }
+            if let error { Text(error).foregroundStyle(.red) }
+        }
+        .navigationTitle(task.workerType ?? "PBS Task")
+        .overlay { if loading { ProgressView() } }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @MainActor private func load() async {
+        loading = true; defer { loading = false }
+        do { entries = try await service.taskLog(upid: task.upid) }
+        catch { self.error = error.localizedDescription }
+    }
 }
 
 private struct PBSJobEditor: View {

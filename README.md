@@ -37,15 +37,15 @@ Whether you are checking cluster health, responding to an unavailable guest, or 
 | **Migration** | Move virtual machines and containers between compatible cluster nodes, including local-disk migration and storage mapping. |
 | **Firewall** | Manage guest firewall options, rules, security-group references, IPSets, IPSet entries, and firewall logs. |
 | **Console** | Open the bundled noVNC console, LXC terminal, or node shell with password, TOTP, or API Token authentication. |
-| **Installation media** | Import an ISO from a URL or browse and download Proxmox LXC appliance templates. |
+| **Installation media** | Import ISOs from a URL or upload them from the device, or browse and download Proxmox LXC appliance templates. |
 | **Performance charts** | Explore CPU, memory, network, and disk history for nodes and guests across hourly, daily, and weekly ranges. |
 | **Task center** | Browse persistent server task history across nodes, inspect results and logs, and cancel running tasks. |
 | **Node maintenance** | Control node services, refresh package indexes, review available updates, and safely reboot or shut down nodes. |
 | **Alerts and notifications** | Detect offline nodes, resource pressure, failed backups, and low storage. Use local alerts or the optional self-hosted APNs relay with per-cluster/resource rules, thresholds, and cooldowns. |
-| **Proxmox Backup Server** | Connect directly to PBS, inspect datastore capacity, groups and snapshots, run GC and verification, and manage prune, verify, and sync jobs. |
+| **Proxmox Backup Server** | Connect directly to PBS, inspect datastore capacity, groups and snapshots, run GC and verification, review task logs, manage prune, verify, and sync jobs, and restore through configured PVE storage. |
 | **HA and replication** | Inspect HA state and manage HA resources, migration groups, modern node/resource affinity rules, and replication jobs. |
-| **Users and permissions** | Manage users, roles, ACL entries, and API Tokens, including one-time token secret handling. |
-| **Cluster infrastructure** | Manage quorum and membership, node networking, storage, Ceph pools/OSD/MON/MGR, and SDN zones, VNets, subnets, controllers, IPAM, and DNS. |
+| **Users and permissions** | Manage users, groups, roles, ACL entries, and API Tokens, including one-time token secret handling. |
+| **Cluster infrastructure** | Manage quorum and membership, node networking, datacenter and node firewall rules, storage, Ceph pools/OSD/MON/MGR, and SDN zones, VNets, subnets, controllers, IPAM, and DNS. |
 | **Batch operations** | Select multiple VMs and containers to start, shut down, force-stop, migrate, or back up together. |
 | **Operation safety** | Review change parameters and impact, authorize critical schedules with device-owner authentication, receive due-operation reminders, keep an audit trail, retry operations, and define maintenance windows. Scheduled commands run while the app is active. |
 | **Personal workspace** | Favorites, reorderable dashboard sections, multi-cluster overview, a favorite-guest widget, and Siri/Shortcuts actions. |

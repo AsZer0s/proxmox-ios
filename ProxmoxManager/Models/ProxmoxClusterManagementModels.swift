@@ -213,6 +213,28 @@ struct ProxmoxAPIToken: Decodable, Identifiable, Hashable {
     }
 }
 
+struct ProxmoxAccessGroup: Decodable, Identifiable, Hashable {
+    let groupid: String
+    let comment: String?
+    let users: [String]
+
+    var id: String { groupid }
+
+    private enum CodingKeys: String, CodingKey { case groupid, comment, users }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        groupid = try container.decode(String.self, forKey: .groupid)
+        comment = try container.decodeIfPresent(String.self, forKey: .comment)
+        if let values = try? container.decode([String].self, forKey: .users) {
+            users = values
+        } else {
+            users = (try? container.decode(String.self, forKey: .users))?
+                .split(separator: ",").map(String.init) ?? []
+        }
+    }
+}
+
 struct ProxmoxAPITokenSecret: Decodable, Hashable {
     let fullTokenID: String
     let value: String

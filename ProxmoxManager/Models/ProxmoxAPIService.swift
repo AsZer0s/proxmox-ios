@@ -91,6 +91,31 @@ enum ProxmoxEndpoint {
     }
 }
 
+enum FirewallScope: Hashable, Identifiable {
+    case datacenter
+    case node(String)
+
+    var id: String { path }
+    var path: String {
+        switch self {
+        case .datacenter: return "/cluster/firewall"
+        case .node(let node): return "/nodes/\(node.pathEscaped)/firewall"
+        }
+    }
+    var title: String {
+        switch self {
+        case .datacenter: return String(localized: "Datacenter Firewall")
+        case .node(let node): return String(localized: "Node Firewall · \(node)")
+        }
+    }
+    var privilegePath: String {
+        switch self {
+        case .datacenter: return "/"
+        case .node(let node): return "/nodes/\(node)"
+        }
+    }
+}
+
 // MARK: - Errors
 
 enum ProxmoxError: LocalizedError {
@@ -748,6 +773,23 @@ actor ProxmoxAPIService {
         _ = try await delete("/access/users/\(userid.pathEscaped)")
     }
 
+    func fetchAccessGroups() async throws -> [ProxmoxAccessGroup] {
+        try await get("/access/groups", as: [ProxmoxAccessGroup].self)
+            .sorted { $0.groupid.localizedStandardCompare($1.groupid) == .orderedAscending }
+    }
+
+    func createAccessGroup(form: [String: String]) async throws {
+        _ = try await post("/access/groups", form: form)
+    }
+
+    func updateAccessGroup(groupid: String, form: [String: String]) async throws {
+        _ = try await put("/access/groups/\(groupid.pathEscaped)", form: form)
+    }
+
+    func deleteAccessGroup(groupid: String) async throws {
+        _ = try await delete("/access/groups/\(groupid.pathEscaped)")
+    }
+
     func fetchAPITokens(userid: String) async throws -> [ProxmoxAPIToken] {
         try await get(
             "/access/users/\(userid.pathEscaped)/token",
@@ -1099,6 +1141,47 @@ actor ProxmoxAPIService {
         )
     }
 
+    func uploadStorageContent(
+        node: String,
+        storage: String,
+        content: String,
+        fileURL: URL
+    ) async throws -> String {
+        guard server.authMethod == .token || ticket != nil else { throw ProxmoxError.notAuthenticated }
+        guard let url = URL(string: "\(server.baseURL)/nodes/\(node.pathEscaped)/storage/\(storage.pathEscaped)/upload") else {
+            throw ProxmoxError.invalidURL
+        }
+
+        let multipart = try Self.makeMultipartUpload(content: content, fileURL: fileURL)
+        defer { try? FileManager.default.removeItem(at: multipart.bodyURL) }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(multipart.boundary)", forHTTPHeaderField: "Content-Type")
+        applyAuth(to: &request)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.upload(for: request, fromFile: multipart.bodyURL)
+        } catch {
+            if let event = certificateTrustState.takeEvent() {
+                switch event {
+                case .confirmationRequired(let fingerprint):
+                    throw ProxmoxError.certificateConfirmationRequired(host: server.host, fingerprint: fingerprint)
+                case .mismatch(let expected, let actual):
+                    throw ProxmoxError.certificateMismatch(host: server.host, expected: expected, actual: actual)
+                }
+            }
+            throw ProxmoxError.network(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw ProxmoxError.requestFailed(status: (response as? HTTPURLResponse)?.statusCode ?? -1, body: String(data: data, encoding: .utf8) ?? "")
+        }
+        auditMutation(method: "POST", path: "/nodes/\(node)/storage/\(storage)/upload", form: ["content": content, "filename": fileURL.lastPathComponent])
+        return Self.mutationResult(from: data)
+    }
+
     @discardableResult
     func deleteStorageContent(
         node: String,
@@ -1379,6 +1462,31 @@ actor ProxmoxAPIService {
     }
 
     // MARK: Guest Firewall
+
+    func fetchFirewallRules(scope: FirewallScope) async throws -> [GuestFirewallRule] {
+        try await get("\(scope.path)/rules", as: [GuestFirewallRule].self)
+            .sorted { $0.pos < $1.pos }
+    }
+
+    func fetchFirewallOptions(scope: FirewallScope) async throws -> GuestFirewallOptions {
+        try await get("\(scope.path)/options", as: GuestFirewallOptions.self)
+    }
+
+    func updateFirewallOptions(scope: FirewallScope, form: [String: String]) async throws {
+        _ = try await put("\(scope.path)/options", form: form)
+    }
+
+    func createFirewallRule(scope: FirewallScope, form: [String: String]) async throws {
+        _ = try await post("\(scope.path)/rules", form: form)
+    }
+
+    func updateFirewallRule(scope: FirewallScope, position: Int, form: [String: String]) async throws {
+        _ = try await put("\(scope.path)/rules/\(position)", form: form)
+    }
+
+    func deleteFirewallRule(scope: FirewallScope, position: Int) async throws {
+        _ = try await delete("\(scope.path)/rules/\(position)")
+    }
 
     func fetchGuestFirewallRules(
         node: String,
@@ -1763,6 +1871,35 @@ actor ProxmoxAPIService {
             return decoded.data ?? ""
         }
         return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private static func makeMultipartUpload(content: String, fileURL: URL) throws -> (bodyURL: URL, boundary: String) {
+        let boundary = "ProxmoxManager-\(UUID().uuidString)"
+        let bodyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("proxmox-upload-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: bodyURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: bodyURL)
+        defer { try? output.close() }
+
+        func write(_ value: String) throws {
+            try output.write(contentsOf: Data(value.utf8))
+        }
+
+        let filename = fileURL.lastPathComponent.replacingOccurrences(of: "\"", with: "_")
+        try write("--\(boundary)\r\n")
+        try write("Content-Disposition: form-data; name=\"content\"\r\n\r\n")
+        try write("\(content)\r\n")
+        try write("--\(boundary)\r\n")
+        try write("Content-Disposition: form-data; name=\"filename\"; filename=\"\(filename)\"\r\n")
+        try write("Content-Type: application/octet-stream\r\n\r\n")
+
+        let input = try FileHandle(forReadingFrom: fileURL)
+        defer { try? input.close() }
+        while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {
+            try output.write(contentsOf: chunk)
+        }
+        try write("\r\n--\(boundary)--\r\n")
+        return (bodyURL, boundary)
     }
 
     private static func errorMessage(from data: Data) -> String {

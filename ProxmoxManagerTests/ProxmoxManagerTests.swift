@@ -41,6 +41,40 @@ final class ProxmoxManagerTests: XCTestCase {
         XCTAssertEqual(server.authMethod, .token)
     }
 
+    func testPBSBackgroundTaskModelsDecodeFlexibleTimestamps() throws {
+        let task = try JSONDecoder().decode(
+            PBSTask.self,
+            from: Data(#"{"upid":"UPID:pbs:1","worker_type":"verify","status":"OK","starttime":"100","endtime":101}"#.utf8)
+        )
+        XCTAssertEqual(task.workerType, "verify")
+        XCTAssertEqual(task.startTime, 100)
+        XCTAssertEqual(task.endTime, 101)
+
+        let log = try JSONDecoder().decode(PBSTaskLogEntry.self, from: Data(#"{"n":3,"t":"TASK OK"}"#.utf8))
+        XCTAssertEqual(log.id, 3)
+        XCTAssertEqual(log.t, "TASK OK")
+    }
+
+    func testAccessGroupDecodesArrayAndStringMembers() throws {
+        let arrayGroup = try JSONDecoder().decode(
+            ProxmoxAccessGroup.self,
+            from: Data(#"{"groupid":"operators","comment":"Operations","users":["root@pam","ops@pve"]}"#.utf8)
+        )
+        XCTAssertEqual(arrayGroup.users, ["root@pam", "ops@pve"])
+
+        let stringGroup = try JSONDecoder().decode(
+            ProxmoxAccessGroup.self,
+            from: Data(#"{"groupid":"readers","users":"alice@pve,bob@pve"}"#.utf8)
+        )
+        XCTAssertEqual(stringGroup.users, ["alice@pve", "bob@pve"])
+    }
+
+    func testFirewallScopeBuildsDatacenterAndNodePaths() {
+        XCTAssertEqual(FirewallScope.datacenter.path, "/cluster/firewall")
+        XCTAssertEqual(FirewallScope.node("pve-a").path, "/nodes/pve-a/firewall")
+        XCTAssertEqual(FirewallScope.node("pve-a").privilegePath, "/nodes/pve-a")
+    }
+
     func testRemoteNotificationRequestsUseTheConfiguredValues() {
         XCTAssertEqual(
             RemoteNotificationManager.deviceEndpointPath(for: "abcdef"),

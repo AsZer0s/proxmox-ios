@@ -109,6 +109,40 @@ struct PBSJob: Decodable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey { case id, store, schedule, comment, disable; case lastRunState = "last-run-state"; case lastRunEndtime = "last-run-endtime" }
 }
 
+struct PBSTask: Decodable, Identifiable, Hashable {
+    let upid: String
+    let workerType: String?
+    let status: String?
+    let user: String?
+    let startTime: Int64?
+    let endTime: Int64?
+
+    var id: String { upid }
+
+    private enum CodingKeys: String, CodingKey {
+        case upid, status, user
+        case workerType = "worker_type"
+        case startTime = "starttime"
+        case endTime = "endtime"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        upid = try container.decode(String.self, forKey: .upid)
+        workerType = try container.decodeIfPresent(String.self, forKey: .workerType)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        user = try container.decodeIfPresent(String.self, forKey: .user)
+        startTime = container.decodeFlexibleInt64(forKey: .startTime)
+        endTime = container.decodeFlexibleInt64(forKey: .endTime)
+    }
+}
+
+struct PBSTaskLogEntry: Decodable, Identifiable, Hashable {
+    let n: Int
+    let t: String
+    var id: Int { n }
+}
+
 actor PBSAPIService {
     private let server: PBSServer
     private let secret: String
@@ -163,6 +197,12 @@ actor PBSAPIService {
     func runPruneJob(id: String) async throws -> String { try await request("/admin/prune/\(id.pathEscaped)", method: "POST", form: [:]) }
     func runVerifyJob(id: String) async throws -> String { try await request("/admin/verify/\(id.pathEscaped)", method: "POST", form: [:]) }
     func runSyncJob(id: String) async throws -> String { try await request("/admin/sync-job/\(id.pathEscaped)", method: "POST", form: [:]) }
+    func tasks(limit: Int = 100) async throws -> [PBSTask] {
+        try await request("/nodes/localhost/tasks?limit=\(max(1, min(limit, 500)))")
+    }
+    func taskLog(upid: String) async throws -> [PBSTaskLogEntry] {
+        try await request("/nodes/localhost/tasks/\(upid.pathEscaped)/log")
+    }
 
     func createJob(kind: String, form: [String: String]) async throws { try await mutate("/config/\(kind)", method: "POST", form: form) }
     func updateJob(kind: String, id: String, form: [String: String]) async throws { try await mutate("/config/\(kind)/\(id.pathEscaped)", method: "PUT", form: form) }

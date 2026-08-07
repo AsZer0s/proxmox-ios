@@ -15,6 +15,8 @@ struct InfrastructureView: View {
             Section("Cluster Infrastructure") {
                 NavigationLink { AdvancedClusterView() } label: { Label("Advanced Cluster", systemImage: "point.3.filled.connected.trianglepath.dotted") }
                 NavigationLink { NodeNetworkConfigurationView(node: node) } label: { Label("Node Network", systemImage: "cable.connector.horizontal") }.disabled(node.isEmpty)
+                NavigationLink { ScopedFirewallView(scope: .datacenter) } label: { Label("Datacenter Firewall", systemImage: "shield.lefthalf.filled") }
+                NavigationLink { ScopedFirewallView(scope: .node(node)) } label: { Label("Node Firewall", systemImage: "shield") }.disabled(node.isEmpty)
                 NavigationLink { StorageConfigurationView() } label: { Label("Storage Configuration", systemImage: "externaldrive.connected.to.line.below") }
                 NavigationLink { CephManagementView(node: node) } label: { Label("Ceph", systemImage: "square.3.layers.3d") }.disabled(node.isEmpty)
                 NavigationLink { SDNManagementView() } label: { Label("Software-Defined Network", systemImage: "point.3.connected.trianglepath.dotted") }

@@ -4,12 +4,14 @@ import UIKit
 struct AccessControlView: View {
     @EnvironmentObject private var appState: AppState
     @State private var users: [ProxmoxAccessUser] = []
+    @State private var groups: [ProxmoxAccessGroup] = []
     @State private var roles: [ProxmoxRole] = []
     @State private var acls: [ProxmoxACLEntry] = []
     @State private var section = 0
     @State private var loading = true
     @State private var error: String?
     @State private var editingUser: ProxmoxAccessUser?
+    @State private var editingGroup: ProxmoxAccessGroup?
     @State private var editingRole: ProxmoxRole?
     @State private var editingACL: ProxmoxACLEntry?
     @State private var creating = false
@@ -17,13 +19,14 @@ struct AccessControlView: View {
     var body: some View {
         List {
             Picker("Section", selection: $section) {
-                Text("Users").tag(0); Text("Roles").tag(1); Text("ACL").tag(2)
+                Text("Users").tag(0); Text("Groups").tag(1); Text("Roles").tag(2); Text("ACL").tag(3)
             }
             .pickerStyle(.segmented)
             .listRowBackground(Color.clear)
 
             if section == 0 { usersSection }
-            else if section == 1 { rolesSection }
+            else if section == 1 { groupsSection }
+            else if section == 2 { rolesSection }
             else { aclSection }
 
             if let error { Section { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) } }
@@ -35,12 +38,29 @@ struct AccessControlView: View {
         .refreshable { await load() }
         .sheet(isPresented: $creating) {
             if section == 0 { UserEditor(user: nil) { await load() } }
-            else if section == 1 { RoleEditor(role: nil) { await load() } }
-            else { ACLEditor(entry: nil, users: users, roles: roles) { await load() } }
+            else if section == 1 { GroupEditor(group: nil) { await load() } }
+            else if section == 2 { RoleEditor(role: nil) { await load() } }
+            else { ACLEditor(entry: nil, users: users, groups: groups, roles: roles) { await load() } }
         }
         .sheet(item: $editingUser) { UserEditor(user: $0) { await load() } }
+        .sheet(item: $editingGroup) { GroupEditor(group: $0) { await load() } }
         .sheet(item: $editingRole) { RoleEditor(role: $0) { await load() } }
-        .sheet(item: $editingACL) { ACLEditor(entry: $0, users: users, roles: roles) { await load() } }
+        .sheet(item: $editingACL) { ACLEditor(entry: $0, users: users, groups: groups, roles: roles) { await load() } }
+    }
+
+    @ViewBuilder private var groupsSection: some View {
+        Section("Groups") {
+            if groups.isEmpty && !loading { Text("No groups are visible.").foregroundStyle(.secondary) }
+            ForEach(groups) { group in
+                Button { editingGroup = group } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(group.groupid).foregroundStyle(.primary)
+                        Text(group.comment ?? group.users.joined(separator: ", "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }.disabled(!canModify)
+            }
+        }
     }
 
     @ViewBuilder private var usersSection: some View {
@@ -95,8 +115,67 @@ struct AccessControlView: View {
     @MainActor private func load() async {
         guard let service = appState.service else { return }
         loading = true; error = nil; defer { loading = false }
-        async let a = service.fetchAccessUsers(); async let b = service.fetchRoles(); async let c = service.fetchACLs()
-        do { (users, roles, acls) = try await (a, b, c) } catch { self.error = error.localizedDescription }
+        async let a = service.fetchAccessUsers(); async let b = service.fetchAccessGroups(); async let c = service.fetchRoles(); async let d = service.fetchACLs()
+        do { (users, groups, roles, acls) = try await (a, b, c, d) } catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct GroupEditor: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    let group: ProxmoxAccessGroup?
+    let onSaved: () async -> Void
+    @State private var groupid: String
+    @State private var comment: String
+    @State private var working = false
+    @State private var error: String?
+
+    init(group: ProxmoxAccessGroup?, onSaved: @escaping () async -> Void) {
+        self.group = group
+        self.onSaved = onSaved
+        _groupid = State(initialValue: group?.groupid ?? "")
+        _comment = State(initialValue: group?.comment ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Group ID", text: $groupid)
+                    .textInputAutocapitalization(.never)
+                    .disabled(group != nil)
+                TextField("Comment", text: $comment)
+                if let error { Text(error).foregroundStyle(.red) }
+                if group != nil {
+                    Button("Delete Group", role: .destructive) { Task { await remove() } }
+                }
+            }
+            .navigationTitle(group == nil ? "Add Group" : "Edit Group")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(groupid.trimmed.isEmpty) }
+            }
+            .overlay { if working { ProgressView() } }
+        }
+    }
+
+    @MainActor private func save() async {
+        guard let service = appState.service else { return }
+        working = true; defer { working = false }
+        var form: [String: String] = [:]
+        if !comment.trimmed.isEmpty { form["comment"] = comment.trimmed }
+        do {
+            if let group { try await service.updateAccessGroup(groupid: group.groupid, form: form) }
+            else { form["groupid"] = groupid.trimmed; try await service.createAccessGroup(form: form) }
+            await onSaved(); dismiss()
+        } catch { self.error = error.localizedDescription }
+    }
+
+    @MainActor private func remove() async {
+        guard let service = appState.service, let group else { return }
+        working = true; defer { working = false }
+        do { try await service.deleteAccessGroup(groupid: group.groupid); await onSaved(); dismiss() }
+        catch { self.error = error.localizedDescription }
     }
 }
 
@@ -177,11 +256,11 @@ private struct RoleEditor: View {
 private struct ACLEditor: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
-    let entry: ProxmoxACLEntry?; let users: [ProxmoxAccessUser]; let roles: [ProxmoxRole]; let onSaved: () async -> Void
+    let entry: ProxmoxACLEntry?; let users: [ProxmoxAccessUser]; let groups: [ProxmoxAccessGroup]; let roles: [ProxmoxRole]; let onSaved: () async -> Void
     @State private var path: String; @State private var type: String; @State private var subject: String; @State private var role: String; @State private var propagate: Bool; @State private var working = false; @State private var error: String?
-    init(entry: ProxmoxACLEntry?, users: [ProxmoxAccessUser], roles: [ProxmoxRole], onSaved: @escaping () async -> Void) { self.entry = entry; self.users = users; self.roles = roles; self.onSaved = onSaved; _path = State(initialValue: entry?.path ?? "/"); _type = State(initialValue: entry?.type ?? "user"); _subject = State(initialValue: entry?.ugid ?? users.first?.userid ?? ""); _role = State(initialValue: entry?.roleid ?? roles.first?.roleid ?? ""); _propagate = State(initialValue: entry?.propagate ?? true) }
+    init(entry: ProxmoxACLEntry?, users: [ProxmoxAccessUser], groups: [ProxmoxAccessGroup], roles: [ProxmoxRole], onSaved: @escaping () async -> Void) { self.entry = entry; self.users = users; self.groups = groups; self.roles = roles; self.onSaved = onSaved; _path = State(initialValue: entry?.path ?? "/"); _type = State(initialValue: entry?.type ?? "user"); _subject = State(initialValue: entry?.ugid ?? users.first?.userid ?? ""); _role = State(initialValue: entry?.roleid ?? roles.first?.roleid ?? ""); _propagate = State(initialValue: entry?.propagate ?? true) }
     var body: some View { NavigationStack { Form {
-        Section("ACL Entry") { TextField("Path", text: $path).textInputAutocapitalization(.never).disabled(entry != nil); Picker("Subject Type", selection: $type) { Text("User").tag("user"); Text("Group").tag("group"); Text("API Token").tag("token") }.disabled(entry != nil); if type == "user" { Picker("User", selection: $subject) { ForEach(users) { Text($0.userid).tag($0.userid) } } } else { TextField(type == "group" ? "Group ID" : "Full Token ID", text: $subject) }; Picker("Role", selection: $role) { ForEach(roles) { Text($0.roleid).tag($0.roleid) } }; Toggle("Propagate to Children", isOn: $propagate) }
+        Section("ACL Entry") { TextField("Path", text: $path).textInputAutocapitalization(.never).disabled(entry != nil); Picker("Subject Type", selection: $type) { Text("User").tag("user"); Text("Group").tag("group"); Text("API Token").tag("token") }.disabled(entry != nil).onChange(of: type) { value in if value == "user" { subject = users.first?.userid ?? "" } else if value == "group" { subject = groups.first?.groupid ?? "" } else { subject = "" } }; if type == "user" { Picker("User", selection: $subject) { ForEach(users) { Text($0.userid).tag($0.userid) } } } else if type == "group" { Picker("Group", selection: $subject) { ForEach(groups) { Text($0.groupid).tag($0.groupid) } } } else { TextField("Full Token ID", text: $subject) }; Picker("Role", selection: $role) { ForEach(roles) { Text($0.roleid).tag($0.roleid) } }; Toggle("Propagate to Children", isOn: $propagate) }
         if let error { Section { Text(error).foregroundStyle(.red) } }
         if entry != nil { Section { Button("Delete ACL Entry", role: .destructive) { Task { await remove() } } } }
     }.navigationTitle(entry == nil ? "Add ACL" : "Edit ACL").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(path.trimmed.isEmpty || subject.trimmed.isEmpty || role.isEmpty) } }.overlay { if working { ProgressView() } } } }

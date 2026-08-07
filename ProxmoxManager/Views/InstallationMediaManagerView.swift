@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct InstallationMediaManagerView: View {
     @EnvironmentObject private var appState: AppState
@@ -15,6 +16,9 @@ struct InstallationMediaManagerView: View {
     @State private var searchText = ""
     @State private var urlText = ""
     @State private var filename = ""
+    @State private var isoSource = ISOImportSource.remote
+    @State private var localFileURL: URL?
+    @State private var selectingLocalFile = false
     @State private var checksum = ""
     @State private var checksumAlgorithm = "sha256"
     @State private var verifyCertificates = true
@@ -64,6 +68,9 @@ struct InstallationMediaManagerView: View {
         if type == .lxc {
             return !selectedTemplate.isEmpty
         }
+        if isoSource == .local {
+            return localFileURL != nil
+        }
         return validDownloadURL != nil &&
             !filename.trimmed.isEmpty &&
             canUseNodeNetwork
@@ -92,7 +99,7 @@ struct InstallationMediaManagerView: View {
                         .disabled(isDownloading)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Download") {
+                    Button(actionLabel) {
                         Task { await download() }
                     }
                     .disabled(!canDownload)
@@ -116,7 +123,24 @@ struct InstallationMediaManagerView: View {
                     await loadTemplates()
                 }
             }
+            .fileImporter(
+                isPresented: $selectingLocalFile,
+                allowedContentTypes: [.data],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    importLocalFile(url)
+                case .failure(let importError):
+                    error = importError.localizedDescription
+                }
+            }
         }
+    }
+
+    private var actionLabel: LocalizedStringKey {
+        type == .qemu && isoSource == .local ? "Upload" : "Download"
     }
 
     private var storagePicker: some View {
@@ -131,26 +155,44 @@ struct InstallationMediaManagerView: View {
         Form {
             Section {
                 storagePicker
-                TextField("Download URL", text: $urlText)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onChange(of: urlText) { value in
-                        guard filename.trimmed.isEmpty,
-                              let candidate = URL(string: value)?.lastPathComponent,
-                              !candidate.isEmpty else {
-                            return
+                Picker("Source", selection: $isoSource) {
+                    Text("Download URL").tag(ISOImportSource.remote)
+                    Text("On This Device").tag(ISOImportSource.local)
+                }
+                .pickerStyle(.segmented)
+                if isoSource == .remote {
+                    TextField("Download URL", text: $urlText)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onChange(of: urlText) { value in
+                            guard filename.trimmed.isEmpty,
+                                  let candidate = URL(string: value)?.lastPathComponent,
+                                  !candidate.isEmpty else {
+                                return
+                            }
+                            filename = candidate
                         }
-                        filename = candidate
+                    TextField("Filename", text: $filename)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } else {
+                    Button(localFileURL?.lastPathComponent ?? "Choose ISO File") {
+                        selectingLocalFile = true
                     }
-                TextField("Filename", text: $filename)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    if let localFileURL,
+                       let values = try? localFileURL.resourceValues(forKeys: [.fileSizeKey]),
+                       let size = values.fileSize {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             } header: {
                 Text("Source")
             }
 
-            Section {
+            if isoSource == .remote {
+                Section {
                 TextField("Checksum (optional)", text: $checksum)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -165,9 +207,10 @@ struct InstallationMediaManagerView: View {
                 Toggle("Verify TLS certificates", isOn: $verifyCertificates)
             } header: {
                 Text("Verification")
+                }
             }
 
-            if !canUseNodeNetwork {
+            if isoSource == .remote && !canUseNodeNetwork {
                 Section {
                     Label(
                         "This account cannot start downloads from the node network.",
@@ -262,6 +305,21 @@ struct InstallationMediaManagerView: View {
         }
     }
 
+    private func importLocalFile(_ url: URL) {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let destination = FileManager.default.temporaryDirectory
+                .appendingPathComponent("proxmox-iso-\(UUID().uuidString)-\(url.lastPathComponent)")
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: url, to: destination)
+            localFileURL = destination
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
     @MainActor
     private func loadTemplates() async {
         guard let service = appState.service else { return }
@@ -295,19 +353,31 @@ struct InstallationMediaManagerView: View {
                     template: selectedTemplate
                 )
             } else {
-                guard let validDownloadURL else { return }
-                taskTitle = String(localized: "Import ISO")
-                object = filename.trimmed
-                upid = try await service.downloadStorageContent(
-                    node: node,
-                    storage: selectedStorage,
-                    content: "iso",
-                    url: validDownloadURL.absoluteString,
-                    filename: filename.trimmed,
-                    checksum: checksum.trimmed.isEmpty ? nil : checksum.trimmed,
-                    checksumAlgorithm: checksum.trimmed.isEmpty ? nil : checksumAlgorithm,
-                    verifyCertificates: verifyCertificates
-                )
+                if isoSource == .local {
+                    guard let localFileURL else { return }
+                    taskTitle = String(localized: "Upload ISO")
+                    object = localFileURL.lastPathComponent
+                    upid = try await service.uploadStorageContent(
+                        node: node,
+                        storage: selectedStorage,
+                        content: "iso",
+                        fileURL: localFileURL
+                    )
+                } else {
+                    guard let validDownloadURL else { return }
+                    taskTitle = String(localized: "Import ISO")
+                    object = filename.trimmed
+                    upid = try await service.downloadStorageContent(
+                        node: node,
+                        storage: selectedStorage,
+                        content: "iso",
+                        url: validDownloadURL.absoluteString,
+                        filename: filename.trimmed,
+                        checksum: checksum.trimmed.isEmpty ? nil : checksum.trimmed,
+                        checksumAlgorithm: checksum.trimmed.isEmpty ? nil : checksumAlgorithm,
+                        verifyCertificates: verifyCertificates
+                    )
+                }
             }
 
             if !upid.isEmpty {
@@ -326,7 +396,7 @@ struct InstallationMediaManagerView: View {
                 storage: selectedStorage,
                 content: contentType
             )
-            let expectedName = type == .lxc ? selectedTemplate : filename.trimmed
+            let expectedName = type == .lxc ? selectedTemplate : (isoSource == .local ? localFileURL?.lastPathComponent ?? "" : filename.trimmed)
             let match = downloaded.first {
                 $0.displayName.caseInsensitiveCompare(expectedName) == .orderedSame ||
                 $0.volid.hasSuffix("/\(expectedName)")
@@ -339,4 +409,8 @@ struct InstallationMediaManagerView: View {
             self.error = error.localizedDescription
         }
     }
+}
+
+private enum ISOImportSource: Hashable {
+    case remote, local
 }
